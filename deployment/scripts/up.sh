@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 拉起百工全部服务（驿传 + CTO Agent + 开发 Agent），并等到 healthy。
+# 拉起三鼎全部服务（驿传 + CTO Agent + 开发 Agent），并等到 healthy。
 #
 #   ./scripts/up.sh              # 用已有镜像启动
 #   ./scripts/up.sh --build      # 先重建镜像再启动
@@ -11,7 +11,7 @@ cd "$(dirname "$0")/.."
 
 [ -f .env ] || { echo "缺少 .env：先执行 cp .env.example .env 并填写路径" >&2; exit 1; }
 
-echo "== 启动（项目名 $(grep -E '^COMPOSE_PROJECT_NAME=' .env | cut -d= -f2 || echo baigong)） =="
+echo "== 启动（项目名 $(grep -E '^COMPOSE_PROJECT_NAME=' .env | cut -d= -f2 || echo sanding)） =="
 docker compose up -d "$@"
 
 echo

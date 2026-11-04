@@ -1,6 +1,8 @@
-# 百工（baigong）
+# 三鼎（Sanding）
 
-人、Agent、平台三层协作的交付系统。系统叫「百工」，其中的协调面（平台）叫「驿传」。
+人、Agent、平台三层协作的交付系统。系统叫「三鼎」——人、Agent、平台三足鼎立，缺一足则倾；鼎亦是百工所铸的重器。
+
+平台（协调面）仍叫「驿传」。系统原名「百工」，2026-11-04 定名「三鼎」。
 
 架构文档：《百工 交付系统架构设计 v3.5》
 https://ecn3asgw8dff.feishu.cn/wiki/H5m4wpOFoiu3Wvk6JAYc7ZMcnsd
@@ -18,7 +20,7 @@ https://ecn3asgw8dff.feishu.cn/wiki/H5m4wpOFoiu3Wvk6JAYc7ZMcnsd
 ## 目录
 
 ```
-baigong/
+sanding/
 └── deployment/          # 统一 docker compose 部署
     ├── docker-compose.yml
     ├── .env.example     # 配置模板（.env 本机私有，已 git 忽略）

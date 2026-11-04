@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 百工运行态一览：容器状态 + 驿传 readyz + worker 注册情况。
+# 三鼎运行态一览：容器状态 + 驿传 readyz + worker 注册情况。
 set -euo pipefail
 
 cd "$(dirname "$0")/.."

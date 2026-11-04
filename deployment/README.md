@@ -1,4 +1,4 @@
-# 百工统一部署
+# 三鼎（Sanding）统一部署
 
 一套 compose 起三个服务，替代原先「各仓库目录里各自 `docker compose up`」的方式。
 
@@ -10,8 +10,8 @@
 | `cto-agent` | `dsh-agent-base` | `dsh-agent-base:local` | `127.0.0.1:8090` → 3080 | CTO Agent：requirement / design / breakdown |
 | `dev-agent` | `dsh-agent-dev` | `dsh-agent-dev:local` | `127.0.0.1:8091` → 3080 | 开发 Agent：dev（含 docker / devcontainer 能力） |
 
-- compose 项目名：`baigong`；容器名保持旧名，兼容既有脚本与宿主工具。
-- 内部网络 `baigong`：容器间可用服务名互访（如 `echuan:8720`）。
+- compose 项目名：`sanding`；容器名保持旧名，兼容既有脚本与宿主工具。
+- 内部网络 `sanding`：容器间可用服务名互访（如 `echuan:8720`）。
 - 两个 agent 的 `cordis.patch.yml` 目前仍走宿主地址 `http://host.docker.internal:8721`。
 - 启动顺序：两个 agent `depends_on` 等 `echuan` healthy。
 
@@ -75,10 +75,10 @@ docker compose up -d echuan    # 只更新某个服务
 | CTO Agent 会话与 profile | `deployment/data/dsh-home-base` | 目录整体打包即可 |
 | 开发 Agent 会话与 profile | `deployment/data/dsh-home-dev` | 目录整体打包即可 |
 
-**注意**：`echuan_v2/scripts/{backup,restore}.sh` 默认按项目名 `echuan-v2` 找容器。现在部署在 `baigong` 项目下，调用时需显式指定：
+**注意**：`echuan_v2/scripts/{backup,restore}.sh` 默认按项目名 `echuan-v2` 找容器。现在部署在 `sanding` 项目下，调用时需显式指定：
 
 ```bash
-COMPOSE_PROJECT_NAME=baigong docker compose -f ../../echuan_v2/docker-compose.yml ps
+COMPOSE_PROJECT_NAME=sanding docker compose -f ../../echuan_v2/docker-compose.yml ps
 # 或直接用本目录：docker compose ps / docker compose exec echuan ...
 ```
 
@@ -87,7 +87,7 @@ COMPOSE_PROJECT_NAME=baigong docker compose -f ../../echuan_v2/docker-compose.ym
 | 项 | 原来 | 现在 |
 | --- | --- | --- |
 | 启动方式 | 三个目录各自 `docker compose up` | 本目录一条 `docker compose up -d` |
-| compose 项目名 | `echuan-v2` / `dsh-agent-base` / `dsh-dev-agent` | 统一 `baigong` |
+| compose 项目名 | `echuan-v2` / `dsh-agent-base` / `dsh-dev-agent` | 统一 `sanding` |
 | 容器名 | `echuan-v2` / `dsh-agent-base` / `dsh-agent-dev` | 不变 |
 | 端口 | 8721 / 8090 / 8091 | 不变 |
 | 镜像名 | `*-local` | 不变 |
@@ -97,7 +97,7 @@ COMPOSE_PROJECT_NAME=baigong docker compose -f ../../echuan_v2/docker-compose.ym
 回滚：
 
 ```bash
-cd ~/project/opc/baigong/deployment && ./scripts/down.sh
+cd ~/project/opc/sanding/deployment && ./scripts/down.sh
 cd ~/project/opc/echuan_v2 && docker compose up -d
 cd ~/project/opc/dsh-agent/dsh-agent-base && docker compose up -d
 cd ~/project/opc/dsh-agent/dsh-dev-agent && docker compose up -d

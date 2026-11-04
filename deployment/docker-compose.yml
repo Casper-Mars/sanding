@@ -1,4 +1,4 @@
-# 百工（baigong）交付系统 —— 统一部署编排
+# 三鼎（sanding）交付系统 —— 统一部署编排
 #
 # 三个服务，对应架构文档 v3.5 的三个执行单元：
 #   echuan      驿传平台（协调面）：需求 / 方案 / 任务 / 交付 / 待办 / 审计
@@ -16,13 +16,13 @@
 #   docker compose down
 #
 # 约定：
-#   - compose 项目名统一为 baigong；容器名沿用 echuan-v2 / dsh-agent-base / dsh-agent-dev，
+#   - compose 项目名统一为 sanding；容器名沿用 echuan-v2 / dsh-agent-base / dsh-agent-dev，
 #     与既有运维脚本、宿主工具保持一致。
 #   - 所有端口只绑 127.0.0.1，公网入口放宿主机反向代理。
 #   - cto-agent 与 echuan 的跨容器通道走 compose 内部网络（服务名 echuan:8720）；
 #     agent 侧默认仍按 dsh-home 里的 cordis.patch.yml 走 host.docker.internal:8721。
 
-name: ${COMPOSE_PROJECT_NAME:-baigong}
+name: ${COMPOSE_PROJECT_NAME:-sanding}
 
 # ── 复用片段 ────────────────────────────────────────────────────────────────
 x-logging: &default-logging
@@ -111,7 +111,7 @@ services:
       - "${ECHUAN_CONFIG_FILE:-../../echuan_v2/configs/echuan.container.toml}:/etc/echuan/echuan.toml:ro"
 
     networks:
-      - baigong
+      - sanding
 
     logging: *default-logging
 
@@ -176,7 +176,7 @@ services:
     environment:
       <<: *agent-env
     networks:
-      - baigong
+      - sanding
     logging: *default-logging
     healthcheck: *agent-healthcheck
 
@@ -229,11 +229,11 @@ services:
       https_proxy: ${DOCKER_PROXY:-}
       all_proxy: ${DOCKER_PROXY:-}
     networks:
-      - baigong
+      - sanding
     logging: *default-logging
     healthcheck: *agent-healthcheck
 
 networks:
-  baigong:
-    name: baigong
+  sanding:
+    name: sanding
     driver: bridge
