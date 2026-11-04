@@ -1,0 +1,239 @@
+# 百工（baigong）交付系统 —— 统一部署编排
+#
+# 三个服务，对应架构文档 v3.5 的三个执行单元：
+#   echuan      驿传平台（协调面）：需求 / 方案 / 任务 / 交付 / 待办 / 审计
+#   cto-agent   CTO Agent：dsh + dsh-rsi-agent + dsh-domain + dsh-echuan
+#   dev-agent   开发 Agent：dsh + dsh-rsi-agent + dsh-dev-domain + dsh-echuan（含 docker / devcontainer）
+#
+# 源码不在本仓库：build context 与插件挂载都指向同级仓库，见 .env.example 的 *_SRC / *_DOMAIN_SRC。
+#
+# 常用命令：
+#   cp .env.example .env && vi .env        # 首次：填路径
+#   docker compose up -d                   # 启动（镜像已存在则不再构建）
+#   docker compose up -d --build           # 强制重建镜像
+#   docker compose ps
+#   docker compose logs -f --tail=100 cto-agent
+#   docker compose down
+#
+# 约定：
+#   - compose 项目名统一为 baigong；容器名沿用 echuan-v2 / dsh-agent-base / dsh-agent-dev，
+#     与既有运维脚本、宿主工具保持一致。
+#   - 所有端口只绑 127.0.0.1，公网入口放宿主机反向代理。
+#   - cto-agent 与 echuan 的跨容器通道走 compose 内部网络（服务名 echuan:8720）；
+#     agent 侧默认仍按 dsh-home 里的 cordis.patch.yml 走 host.docker.internal:8721。
+
+name: ${COMPOSE_PROJECT_NAME:-baigong}
+
+# ── 复用片段 ────────────────────────────────────────────────────────────────
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+x-agent-security-opt: &agent-security-opt
+  - seccomp=unconfined
+  - apparmor=unconfined
+
+x-agent-cap: &agent-cap
+  - SYS_ADMIN
+
+x-agent-healthcheck: &agent-healthcheck
+  test:
+    - CMD-SHELL
+    - >-
+      node -e "const os=require('os');const ip=Object.values(os.networkInterfaces()).flat().find(i=>i.family==='IPv4'&&!i.internal).address;require('http').get({host:ip,port:3080,path:'/'},r=>{r.resume();process.exit(0)}).on('error',()=>process.exit(1))"
+  interval: 15s
+  timeout: 5s
+  retries: 5
+  start_period: 30s
+
+# 两个 agent 共用的环境变量
+x-agent-env: &agent-env
+  DSH_HOME: /home/node/.dsh
+  # 插件挂载根目录（entrypoint / ensure-plugins 读取）
+  PLUGIN_SRC_DIR: /src/plugins
+  DSH_PROFILE: ${DSH_PROFILE:-web}
+  # peer 依赖版本，必须与镜像内 dsh 版本一致
+  DSH_PEER_VERSION: ${DSH_PEER_VERSION:-0.2.1-rc.2}
+  # 项目路径：devcontainer CLI 的 --workspace-folder
+  HOST_PROJECT_PATH: ${HOST_PROJECT_PATH:?请在 .env 中设置项目绝对路径}
+  # 内网 / 宿主地址一律直连：驿传平台在宿主 127.0.0.1:8721（仅回环发布），
+  # 只能经 host.docker.internal / 192.168.65.254 访问，不能过代理。
+  NO_PROXY: localhost,127.0.0.1,::1,host.docker.internal,192.168.65.254,echuan,m.daocloud.io
+  no_proxy: localhost,127.0.0.1,::1,host.docker.internal,192.168.65.254,echuan,m.daocloud.io
+
+services:
+  # ── 驿传平台 ──────────────────────────────────────────────────────────────
+  echuan:
+    image: ${ECHUAN_IMAGE:-echuan-v2:local}
+    build:
+      context: ${ECHUAN_SRC:-../../echuan_v2}
+      dockerfile: Dockerfile
+      args:
+        VERSION: ${ECHUAN_VERSION:-dev}
+        COMMIT: ${ECHUAN_COMMIT:-none}
+        # 构建期依赖源（默认值即国内镜像；切回官方见 echuan 仓库 docs/deploy.md 第 3.5 节）
+        GOPROXY: ${DOCKER_BUILD_GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct}
+        NPM_REGISTRY: ${DOCKER_BUILD_NPM_REGISTRY:-https://registry.npmmirror.com}
+        APK_MIRROR: ${DOCKER_BUILD_APK_MIRROR:-mirrors.aliyun.com}
+        IMAGE_MIRROR: ${DOCKER_BUILD_IMAGE_MIRROR:-}
+        NODE_IMAGE: ${DOCKER_BUILD_NODE_IMAGE:-node:22-alpine}
+        GO_IMAGE: ${DOCKER_BUILD_GO_IMAGE:-golang:1.26-alpine}
+        RUNTIME_IMAGE: ${DOCKER_BUILD_RUNTIME_IMAGE:-alpine:3.20}
+        # Docker Desktop 会把全局代理注入构建容器。默认清空（直连），
+        # 需要代理的环境在 .env 里设置 DOCKER_BUILD_*_PROXY。
+        HTTP_PROXY: ${DOCKER_BUILD_HTTP_PROXY:-}
+        HTTPS_PROXY: ${DOCKER_BUILD_HTTPS_PROXY:-}
+        http_proxy: ${DOCKER_BUILD_HTTP_PROXY:-}
+        https_proxy: ${DOCKER_BUILD_HTTPS_PROXY:-}
+        ALL_PROXY: ${DOCKER_BUILD_ALL_PROXY:-}
+        all_proxy: ${DOCKER_BUILD_ALL_PROXY:-}
+    container_name: ${ECHUAN_CONTAINER_NAME:-echuan-v2}
+    restart: unless-stopped
+
+    # 宿主 8721 → 容器 8720（容器内监听地址固定，端口隔离只在部署层做）
+    ports:
+      - "127.0.0.1:${ECHUAN_PORT:-8721}:8720"
+
+    # 默认 UID/GID 10001；Linux 宿主机请让数据目录属主与其一致。
+    user: "${ECHUAN_UID:-10001}:${ECHUAN_GID:-10001}"
+
+    environment:
+      TZ: ${TZ:-Asia/Shanghai}
+      # 留空时配置文件生效；非空时覆盖 TOML（ECHUAN_* 优先级最高）
+      ECHUAN_LOG_LEVEL: ${ECHUAN_LOG_LEVEL:-}
+
+    volumes:
+      # 数据库 / objects / workspaces 全部落在宿主机目录，删容器不丢数据
+      - "${ECHUAN_DATA_DIR:-${HOME}/echuan-v2-data}:/data"
+      # 配置只读挂载；单一真相源留在 echuan 仓库
+      - "${ECHUAN_CONFIG_FILE:-../../echuan_v2/configs/echuan.container.toml}:/etc/echuan/echuan.toml:ro"
+
+    networks:
+      - baigong
+
+    logging: *default-logging
+
+    # 探针前用 env -u 剥离代理变量：Docker Desktop 会把宿主代理注入容器，
+    # busybox wget 走代理且不认 NO_PROXY，会把 127.0.0.1 的健康检查打成 502。
+    healthcheck:
+      test:
+        - CMD
+        - env
+        - -u
+        - HTTP_PROXY
+        - -u
+        - HTTPS_PROXY
+        - -u
+        - ALL_PROXY
+        - -u
+        - http_proxy
+        - -u
+        - https_proxy
+        - -u
+        - all_proxy
+        - wget
+        - -q
+        - -O
+        - /dev/null
+        - http://127.0.0.1:8720/readyz
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 15s
+
+  # ── CTO Agent ────────────────────────────────────────────────────────────
+  cto-agent:
+    image: ${DSH_BASE_IMAGE:-dsh-agent-base:local}
+    build:
+      context: ${DSH_BASE_SRC:-../../dsh-agent/dsh-agent-base}
+      dockerfile: Dockerfile
+      args:
+        NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmmirror.com}
+        DSH_VERSION: ${DSH_VERSION:-0.2.1-rc.2}
+    container_name: ${DSH_BASE_CONTAINER_NAME:-dsh-agent-base}
+    restart: unless-stopped
+    depends_on:
+      echuan:
+        condition: service_healthy
+    # 让容器用 host.docker.internal 访问宿主服务（驿传平台）
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "127.0.0.1:${DSH_BASE_PORT:-8090}:3080"
+    volumes:
+      # 三个本地插件：目录挂载（只读），启动时由 entrypoint 直接 link
+      - "${DSH_RSI_AGENT_SRC:?请在 .env 中设置 dsh-rsi-agent 路径}:/src/plugins/dsh-rsi-agent:ro"
+      - "${DSH_DOMAIN_SRC:?请在 .env 中设置 dsh-domain 路径}:/src/plugins/dsh-domain:ro"
+      - "${ECHUAN_KIT_DIR:?请在 .env 中设置 echuan kit 路径}:/src/plugins/dsh-echuan:ro"
+      # 项目 / 工作区：agent 与宿主共享同一份数据
+      - "${HOST_PROJECT_PATH:?请在 .env 中设置项目绝对路径}:/workspace"
+      # dsh home：profile / 会话 / cordis.patch.yml 由用户直接编辑
+      - "${DSH_BASE_HOME_DIR:-./data/dsh-home-base}:/home/node/.dsh"
+    security_opt: *agent-security-opt
+    cap_add: *agent-cap
+    environment:
+      <<: *agent-env
+    networks:
+      - baigong
+    logging: *default-logging
+    healthcheck: *agent-healthcheck
+
+  # ── 开发 Agent ───────────────────────────────────────────────────────────
+  dev-agent:
+    image: ${DSH_DEV_IMAGE:-dsh-agent-dev:local}
+    build:
+      context: ${DSH_DEV_SRC:-../../dsh-agent/dsh-dev-agent}
+      dockerfile: Dockerfile
+      args:
+        NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmmirror.com}
+        DSH_VERSION: ${DSH_VERSION:-0.2.1-rc.2}
+        GH_VERSION: ${GH_VERSION:-2.95.0}
+        # 构建期下载 gh 需要出网；留空则沿用 Docker Desktop 注入的构建代理
+        GH_PROXY: ${DOCKER_PROXY:-}
+    container_name: ${DSH_DEV_CONTAINER_NAME:-dsh-agent-dev}
+    restart: unless-stopped
+    depends_on:
+      echuan:
+        condition: service_healthy
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "127.0.0.1:${DSH_DEV_PORT:-8091}:3080"
+    volumes:
+      # 宿主 Docker socket：docker CLI / devcontainer CLI 指挥宿主 daemon
+      - "${DOCKER_SOCKET:-/var/run/docker.sock}:/var/run/docker.sock"
+      # 三个本地插件：目录挂载（只读），启动时由 entrypoint 直接 link
+      - "${DSH_RSI_AGENT_SRC:?请在 .env 中设置 dsh-rsi-agent 路径}:/src/plugins/dsh-rsi-agent:ro"
+      - "${ECHUAN_KIT_DIR:?请在 .env 中设置 echuan kit 路径}:/src/plugins/dsh-echuan:ro"
+      - "${DSH_DEV_DOMAIN_SRC:?请在 .env 中设置 dsh-dev-domain 路径}:/src/plugins/dsh-dev-domain:ro"
+      # 项目 / 工作区：agent 与工具容器共享同一份数据
+      - "${HOST_PROJECT_PATH:?请在 .env 中设置项目绝对路径}:/workspace"
+      # dsh home：profile / 会话 / cordis.patch.yml 由用户直接编辑
+      - "${DSH_DEV_HOME_DIR:-./data/dsh-home-dev}:/home/node/.dsh"
+      # gh CLI 令牌：宿主只读文件（chmod 600），绝不写入镜像 / 仓库
+      - "${GH_TOKEN_FILE:-./secrets/gh-token.empty}:/run/secrets/gh_token:ro"
+    security_opt: *agent-security-opt
+    cap_add: *agent-cap
+    environment:
+      <<: *agent-env
+      # devcontainer CLI 查询海外 registry（ghcr.io）的 features 清单需要代理。
+      # 注意：Docker Desktop 会把宿主 shell 的【小写】代理变量注入容器，且小写
+      # no_proxy 不含 host.docker.internal；插件 HTTP 客户端读小写变量，会把访问
+      # 驿传平台的请求发给代理 → 502。所以大小写必须成对显式覆盖。
+      HTTP_PROXY: ${DOCKER_PROXY:-}
+      HTTPS_PROXY: ${DOCKER_PROXY:-}
+      ALL_PROXY: ${DOCKER_PROXY:-}
+      http_proxy: ${DOCKER_PROXY:-}
+      https_proxy: ${DOCKER_PROXY:-}
+      all_proxy: ${DOCKER_PROXY:-}
+    networks:
+      - baigong
+    logging: *default-logging
+    healthcheck: *agent-healthcheck
+
+networks:
+  baigong:
+    name: baigong
+    driver: bridge

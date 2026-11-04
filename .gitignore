@@ -1,0 +1,8 @@
+# 部署运行期数据（dsh home / 会话 / 凭据）
+deployment/data/
+# 密钥：只允许 committed 的空占位文件
+deployment/secrets/*
+!deployment/secrets/gh-token.empty
+# 本机配置
+deployment/.env
+.DS_Store
