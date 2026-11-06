@@ -1,4 +1,4 @@
-# dsh-agent-cto 部署示例（macOS 宿主）
+# dsh-agent-base 部署示例（macOS 宿主）
 #
 # 这是 examples，不是项目主体：镜像由上一级目录的 Dockerfile 构建（context = ..）。
 #   - 插件【不入镜像、也不挂宿主目录】：启动时按 PLUGIN_SPECS 从 npm registry 安装；
@@ -13,14 +13,14 @@
 
 services:
   dsh:
-    image: dsh-agent-cto:local
+    image: dsh-agent-base:local
     build:
       context: ..
       dockerfile: Dockerfile
       args:
         NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmmirror.com}
         DSH_VERSION: ${DSH_VERSION:-0.2.1-rc.2}
-    container_name: dsh-agent-cto
+    container_name: dsh-agent-base
     restart: unless-stopped
     # 让容器用 host.docker.internal 访问宿主服务（驿传平台）。
     # macOS Docker Desktop 原生支持；Linux 需要这条 host-gateway 映射。

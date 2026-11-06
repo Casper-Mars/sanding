@@ -1,5 +1,6 @@
 #!/bin/sh
-# dsh-agent-cto 容器入口：装配运行时（profile / 插件），然后启动 dsh。
+# dsh-agent-base 容器入口：装配运行时（profile / 插件），然后启动 dsh。
+# 装哪个角色由 PLUGIN_SPECS 决定（CTO / PM 共用本镜像）。
 #
 # 装配（幂等，每次启动执行）：
 #   1. profile 不存在时初始化（dsh 会写入 hoisted + no-auto-peers 的 pnpm 设置）；

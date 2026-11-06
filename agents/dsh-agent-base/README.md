@@ -1,25 +1,40 @@
-# dsh-agent-pm
+# dsh-agent-base
 
-产品经理 Agent 镜像：dsh 运行时 + git + pnpm，业务插件（PM 领域、驿传接入等）**不进镜像**，
-容器启动时按 `PLUGIN_SPECS` 从 npm registry 装进 profile。
+角色型 Agent（CTO / PM）的**通用基座镜像**：dsh 运行时 + git + pnpm + bubblewrap。
+镜像里没有任何业务插件——装哪个角色由部署时的 `PLUGIN_SPECS` 决定，所以 CTO 与 PM 共用同一个镜像。
 
 | 能力 | 来源 |
 |---|---|
 | dsh + git + pnpm + bubblewrap | 镜像 |
-| `dsh-agent-pm`（PM 领域 + `preset-pm`：需求分析 / 方案设计 / 任务拆解） | npm 包 `dsh-agent-pm` |
-| `dsh-agent-base`（固定工作区 + main session id + console 日志） | npm 包 `dsh-agent-base` |
-| `dsh-echuan`（驿传平台接入） | npm 包 `dsh-echuan` |
-| `dsh-browser-native`（浏览器工具，走 CDP） | npm 包 `dsh-browser-native` |
+| `dsh-agent-cto` / `dsh-agent-pm`（角色领域 + preset） | npm 包，由 `PLUGIN_SPECS` 选择 |
+| `dsh-agent-base`（固定工作区 + main session id + console 日志） | npm 包 |
+| `dsh-echuan`（驿传平台接入） | npm 包 |
+| `dsh-browser-native`（浏览器工具，走 CDP） | npm 包 |
 
-与 `dsh-agent-dev` 的差别：**不含 docker CLI / devcontainer CLI / gh** —— PM 不做代码交付，
-也不需要操作宿主 Docker。要加时在 Dockerfile 里补对应层即可。
+与 `dsh-agent-dev` 的差别：**不含 docker CLI / devcontainer CLI / gh** —— 角色 Agent 不做代码交付，
+也不需要操作宿主 Docker。要加时在 Dockerfile 里补对应层。
 
-镜像：`dsh-agent-pm:local`
+镜像：`dsh-agent-base:local`
+
+## 角色由 PLUGIN_SPECS 决定
+
+同一镜像，两种典型用法：
+
+```
+# CTO
+PLUGIN_SPECS=dsh-agent-cto@0.1.0 dsh-echuan@0.1.0 dsh-agent-base@0.1.0 dsh-browser-native@0.1.0
+
+# PM
+PLUGIN_SPECS=dsh-agent-pm@0.1.0 dsh-echuan@0.1.0 dsh-agent-base@0.1.0 dsh-browser-native@0.1.0
+```
+
+**一个 profile 只能装一个角色包**：`dsh-agent-cto` / `dsh-agent-pm` / `dsh-agent-dev` 都占用
+`registry.default` 与人设槽位，混装会互相覆盖。
 
 ## 构建
 
 ```bash
-docker build -t dsh-agent-pm:local .
+docker build -t dsh-agent-base:local .
 ```
 
 构建参数（`--build-arg`）：
@@ -49,7 +64,7 @@ docker build -t dsh-agent-pm:local .
 若 peers 被装进 profile，`dsh-tools` 的 `TOOL_RUNTIME_SCHEDULER` Symbol 会分裂，任何工具调用都报
 `Cannot read properties of undefined (reading 'prepare')`。
 
-插件自己的配置（echuan 平台地址、browser-native 的 CDP 地址等）属于 dsh 的 profile 配置，
+插件自己的配置（echuan 平台地址 / actor、browser-native 的 CDP 地址等）属于 dsh 的 profile 配置，
 写在 `$DSH_HOME/profiles/<profile>/cordis.patch.yml`，不由部署层注入。
 
 ## 部署示例
@@ -58,24 +73,22 @@ docker build -t dsh-agent-pm:local .
 
 ```bash
 cd examples
-cp .env.example .env      # 设置 HOST_PROJECT_PATH（插件版本在 PLUGIN_SPECS 里）
+cp .env.example .env      # 设置 HOST_PROJECT_PATH、选角色（PLUGIN_SPECS）
 docker compose up -d --build
 ./smoke-test.sh
 ```
 
-- Web UI：`http://127.0.0.1:8094/`（token 见 `docker compose logs`）
-- 容器名 `dsh-agent-pm`
+- Web UI：`http://127.0.0.1:8092/`（token 见 `docker compose logs`）
+- 容器名 `dsh-agent-base`
 
 ## 更新插件
 
 插件不在镜像里，**改插件版本不需要重建镜像**：
 
 ```bash
-# 插件仓库：改版本号 → build → publish
-pnpm -C ../../../dsh-plugins/dsh-agent-pm build && npm publish
+pnpm -C ../../../dsh-plugins/dsh-agent-cto build && npm publish   # 以 cto 为例
 
-# 部署侧：改 examples/.env 的 PLUGIN_SPECS，重启
-docker compose up -d
+docker compose up -d      # 改 .env 的 PLUGIN_SPECS 后重启即可
 ```
 
 回滚同理。npmmirror 对刚发布的版本有分钟级延迟，急的话临时把 `NPM_REGISTRY` 指到官方源。
@@ -91,7 +104,6 @@ examples/                   部署示例：compose / .env.example / smoke-test.s
 ## 已知边界
 
 - 镜像不含模型 API Key；首次访问 Web UI 自己配。
-- 一个 profile 只装一个角色包：`dsh-agent-pm` / `dsh-agent-cto` / `dsh-agent-dev` 都占用 `registry.default` 与人设槽位，
-  不要同时装进同一个 profile。
+- 一个 profile 只装一个角色包（见上）。
 - 插件必须可从 registry 取到；`PLUGIN_SPECS` 也接受 tarball / git spec，但该包需自带构建产物。
 - 插件装在 `DSH_HOME_DIR` 挂出来的 profile 里：换 home 目录等于重装插件。

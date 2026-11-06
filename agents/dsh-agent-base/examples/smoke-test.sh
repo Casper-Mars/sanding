@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# dsh-agent-pm 冒烟验证：容器健康 → dev-container 无关项省略 → 插件已装
+# dsh-agent-base 冒烟验证：容器健康 → dev-container 无关项省略 → 插件已装
 set -euo pipefail
 cd "$(dirname "$0")"
 
 echo "== 1/3 容器健康 =="
-state="$(docker inspect -f '{{.State.Health.Status}}' dsh-agent-pm 2>/dev/null || echo unknown)"
+state="$(docker inspect -f '{{.State.Health.Status}}' dsh-agent-base 2>/dev/null || echo unknown)"
 echo "health=$state"
 [ "$state" = "healthy" ] || { echo "FAIL：容器未 healthy"; docker compose ps; exit 1; }
 

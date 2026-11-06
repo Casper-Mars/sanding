@@ -1,15 +1,15 @@
 # syntax=docker/dockerfile:1
 #
-# dsh-agent-cto 镜像：CTO Agent 运行时 + 启动时从 npm 安装插件
+# dsh-agent-base 镜像：角色型 Agent（CTO / PM）的通用基座 + 启动时从 npm 安装插件
 #
 # 设计边界（重要）：
-#   1. 镜像【不包含】任何业务插件。插件在容器启动时按 PLUGIN_SPECS 从 npm registry
-#      安装进 profile（版本钉死，同版本重复 add 幂等）。
-#   2. 镜像只提供运行时：dsh + git + pnpm。CTO 不做代码交付，所以不含
-#      docker CLI / devcontainer CLI / gh（需要时再加）。
+#   1. 镜像【不包含】任何业务插件。装哪个角色由部署时的 PLUGIN_SPECS 决定 ——
+#      CTO 与 PM 用同一个镜像，只是插件清单不同。
+#   2. 镜像只提供运行时：dsh + git + pnpm。不含 docker CLI / devcontainer CLI / gh
+#      （那是 dsh-agent-dev 的能力；角色 Agent 不做代码交付）。
 #   3. 插件不入镜像、不挂宿主目录，也不需要宿主编译。
 #
-# 构建：  docker build -t dsh-agent-cto:local .
+# 构建：  docker build -t dsh-agent-base:local .
 
 
 # ---------------------------------------------------------------------------

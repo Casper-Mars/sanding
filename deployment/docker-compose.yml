@@ -2,15 +2,16 @@
 #
 # 五个服务，对应架构文档 v3.5 的执行单元 + 一个共享浏览器：
 #   echuan      驿传平台（协调面）：需求 / 方案 / 任务 / 交付 / 待办 / 审计
-#   cto-agent   CTO Agent：dsh + dsh-agent-cto + dsh-echuan（插件启动时从 npm 安装）
+#   cto-agent   CTO Agent：dsh-agent-base 镜像 + dsh-agent-cto 插件组
 #   dev-agent   开发 Agent：dsh + dsh-agent-dev + dsh-echuan（含 docker / devcontainer）
-#   pm-agent    产品经理 Agent：dsh + dsh-agent-pm + dsh-echuan（插件启动时从 npm 安装）
+#   pm-agent    产品经理 Agent：同一个 dsh-agent-base 镜像 + dsh-agent-pm 插件组
 #   browserless 无头 Chromium：供 agent / 客户端经 CDP(WS) 或 HTTP 调用
 #
 # 浏览器说明：0.2.0 起直接使用官方镜像 ghcr.io/browserless/chromium，
 # 不再自建带 stagehand extension 的镜像（扩展已弃用，无需 --load-extension）。
 #
-# 源码：三个 agent 都在本仓库 agents/（dsh-agent-cto / dsh-agent-dev / dsh-agent-pm）。
+# 源码：两个镜像都在本仓库 agents/（dsh-agent-base 供 cto+pm 共用、dsh-agent-dev）。
+# cto 与 pm 的镜像完全相同，差异只在 PLUGIN_SPECS；compose 会复用同一次构建。
 # 插件一律不挂宿主目录：启动时按 DSH_*_PLUGIN_SPECS 从 npm registry 安装。
 #
 # 常用命令：
@@ -189,9 +190,10 @@ services:
 
   # ── CTO Agent ────────────────────────────────────────────────────────────
   cto-agent:
-    image: ${DSH_CTO_IMAGE:-dsh-agent-cto:local}
+    # 与 pm-agent 同一个镜像，角色由 PLUGIN_SPECS 决定
+    image: ${DSH_AGENT_IMAGE:-dsh-agent-base:local}
     build:
-      context: ${DSH_CTO_SRC:-../agents/dsh-agent-cto}
+      context: ${DSH_AGENT_SRC:-../agents/dsh-agent-base}
       dockerfile: Dockerfile
       args:
         NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmmirror.com}
@@ -282,9 +284,10 @@ services:
 
   # ── 产品经理 Agent ────────────────────────────────────────────────────────
   pm-agent:
-    image: ${DSH_PM_IMAGE:-dsh-agent-pm:local}
+    # 与 cto-agent 同一个镜像，角色由 PLUGIN_SPECS 决定
+    image: ${DSH_AGENT_IMAGE:-dsh-agent-base:local}
     build:
-      context: ${DSH_PM_SRC:-../agents/dsh-agent-pm}
+      context: ${DSH_AGENT_SRC:-../agents/dsh-agent-base}
       dockerfile: Dockerfile
       args:
         NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmmirror.com}

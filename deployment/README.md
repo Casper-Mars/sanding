@@ -1,6 +1,7 @@
 # 三鼎（Sanding）统一部署
 
-一套 compose 起五个服务（驿传 + 三个 Agent + 一个共享无头浏览器），
+一套 compose 起五个服务（驿传 + 三个 Agent + 一个共享无头浏览器）；其中 cto 与 pm 共用同一个镜像，
+只有插件清单不同，
 替代原先「各仓库目录里各自 `docker compose up`」的方式。
 
 > **0.2.0 起不再需要自建带 stagehand extension 的浏览器镜像**：`browserless`
@@ -12,8 +13,8 @@
 | compose 服务 | 容器名 | 镜像 | 宿主端口 | 作用 |
 | --- | --- | --- | --- | --- |
 | `echuan` | `echuan-v2` | `echuan-v2:local` | `127.0.0.1:8721` → 8720 | 驿传平台：状态唯一真相源 |
-| `cto-agent` | `dsh-agent-cto` | `dsh-agent-cto:local` | `127.0.0.1:8090` → 3080 | CTO Agent：requirement / design / breakdown |
-| `pm-agent` | `dsh-agent-pm` | `dsh-agent-pm:local` | `127.0.0.1:8093` → 3080 | 产品经理 Agent：需求 / 方案 / 拆解 |
+| `cto-agent` | `dsh-agent-cto` | `dsh-agent-base:local` | `127.0.0.1:8090` → 3080 | CTO Agent：requirement / design / breakdown |
+| `pm-agent` | `dsh-agent-pm` | `dsh-agent-base:local` | `127.0.0.1:8093` → 3080 | 产品经理 Agent：需求 / 方案 / 拆解 |
 | `dev-agent` | `dsh-agent-dev` | `dsh-agent-dev:local` | `127.0.0.1:8091` → 3080 | 开发 Agent：dev（含 docker / devcontainer 能力） |
 | `browserless` | `browserless` | `ghcr.io/browserless/chromium:latest` | `127.0.0.1:3001` → 3000 | 无头 Chromium：CDP / HTTP 供 agent 调用 |
 
@@ -30,7 +31,7 @@
 
 宿主机上需要存在（路径写在 `.env`）：
 
-- 源码：`ECHUAN_SRC`（同级仓库）+ `DSH_CTO_SRC` / `DSH_PM_SRC` / `DSH_DEV_SRC`（本仓库 `agents/`）
+- 源码：`ECHUAN_SRC`（同级仓库）+ `DSH_AGENT_SRC` / `DSH_DEV_SRC`（本仓库 `agents/`）
 - **不需要任何宿主插件源码**：两个 agent 的插件都在容器启动时按 `.env` 的
   `DSH_CTO_PLUGIN_SPECS` / `DSH_PM_PLUGIN_SPECS` / `DSH_DEV_PLUGIN_SPECS` 从 npm registry 安装到 profile。
 
