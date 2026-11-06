@@ -9,18 +9,20 @@ https://ecn3asgw8dff.feishu.cn/wiki/H5m4wpOFoiu3Wvk6JAYc7ZMcnsd
 
 ## 本仓库是什么
 
-**只有部署，不含源码。** 三个组成组件各自独立成仓，本仓库负责把它们作为一套系统编排、启动、验证：
+**以部署为主，含开发 Agent 的镜像源码。** `agents/dsh-agent-dev` 是构建 dev-agent 镜像的源码（Dockerfile + 入口脚本 + 部署示例），其余组件各自独立成仓：
 
 | 服务 | 角色 | 仓库 |
 | --- | --- | --- |
 | `echuan` | 驿传平台（协调面：需求/方案/任务/交付/待办/审计） | `../echuan_v2` |
 | `cto-agent` | CTO Agent（dsh + dsh-rsi-agent + dsh-domain + dsh-echuan） | `../dsh-agent/dsh-agent-base` |
-| `dev-agent` | 开发 Agent（dsh + dsh-rsi-agent + dsh-dev-domain + dsh-echuan + docker/devcontainer） | `../dsh-agent/dsh-dev-agent` |
+| `dev-agent` | 开发 Agent（dsh + 插件 + docker/devcontainer） | `agents/dsh-agent-dev`（本仓库） |
 
 ## 目录
 
 ```
 sanding/
+├── agents/
+│   └── dsh-agent-dev/   # 开发 Agent 镜像源码（构建为主，examples/ 是部署示例）
 └── deployment/          # 统一 docker compose 部署
     ├── docker-compose.yml
     ├── .env.example     # 配置模板（.env 本机私有，已 git 忽略）

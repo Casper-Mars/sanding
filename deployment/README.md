@@ -1,6 +1,11 @@
 # 三鼎（Sanding）统一部署
 
-一套 compose 起三个服务，替代原先「各仓库目录里各自 `docker compose up`」的方式。
+一套 compose 起四个服务（驿传 + 两个 Agent + 一个共享无头浏览器），
+替代原先「各仓库目录里各自 `docker compose up`」的方式。
+
+> **0.2.0 起不再需要自建带 stagehand extension 的浏览器镜像**：`browserless`
+> 直接用官方 `ghcr.io/browserless/chromium`，不带 `--load-extension`。
+> 浏览器只通过 CDP(WebSocket) / HTTP 被客户端使用。
 
 ## 1. 拓扑
 
@@ -9,29 +14,38 @@
 | `echuan` | `echuan-v2` | `echuan-v2:local` | `127.0.0.1:8721` → 8720 | 驿传平台：状态唯一真相源 |
 | `cto-agent` | `dsh-agent-base` | `dsh-agent-base:local` | `127.0.0.1:8090` → 3080 | CTO Agent：requirement / design / breakdown |
 | `dev-agent` | `dsh-agent-dev` | `dsh-agent-dev:local` | `127.0.0.1:8091` → 3080 | 开发 Agent：dev（含 docker / devcontainer 能力） |
+| `browserless` | `browserless` | `ghcr.io/browserless/chromium:latest` | `127.0.0.1:3001` → 3000 | 无头 Chromium：CDP / HTTP 供 agent 调用 |
 
 - compose 项目名：`sanding`；容器名保持旧名，兼容既有脚本与宿主工具。
 - 内部网络 `sanding`：容器间可用服务名互访（如 `echuan:8720`）。
 - 两个 agent 的 `cordis.patch.yml` 目前仍走宿主地址 `http://host.docker.internal:8721`。
 - 启动顺序：两个 agent `depends_on` 等 `echuan` healthy。
+- 浏览器访问方式（`TOKEN` 即 `.env` 的 `BROWSERLESS_TOKEN`）：
+  - agent 容器内：`ws://host.docker.internal:3001?token=<TOKEN>`（不能写 127.0.0.1）
+  - 宿主本机：`ws://127.0.0.1:3001?token=<TOKEN>`
+  - HTTP：`http://127.0.0.1:3001/json/version?token=<TOKEN>`、`/pressure`、`/content` 等
 
 ## 2. 依赖
 
 宿主机上需要存在（路径写在 `.env`）：
 
-- 三个源码仓库：`ECHUAN_SRC` / `DSH_BASE_SRC` / `DSH_DEV_SRC`
-- 三个插件仓库，且 **已构建**：`DSH_RSI_AGENT_SRC` / `DSH_DOMAIN_SRC` / `DSH_DEV_DOMAIN_SRC` / `ECHUAN_KIT_DIR`
-  - `dsh-rsi-agent`、`dsh-domain`、`dsh-dev-domain`：`dist-server/index.js`
+- 源码：`ECHUAN_SRC` / `DSH_BASE_SRC`（同级仓库）+ `DSH_DEV_SRC`（本仓库 `agents/dsh-agent-dev`）
+- cto-agent 的插件仓库，且 **已构建**：`DSH_RSI_AGENT_SRC` / `DSH_DOMAIN_SRC` / `ECHUAN_KIT_DIR`
+  - `dsh-rsi-agent`、`dsh-domain`：`dist-server/index.js`
   - `echuan kit`：`lib/index.js`
 
 ```bash
 pnpm -C ~/project/opc/dsh-rsi-agent build
 pnpm -C ~/project/opc/dsh-domain build
-pnpm -C ~/project/opc/dsh-dev-domain build
 pnpm -C ~/project/opc/echuan_v2/kit build
 ```
 
-插件不在镜像里：compose 只读目录挂载到 `/src/plugins/<name>`，容器启动时由 entrypoint 幂等 link 进 profile。
+**dev-agent 不需要任何宿主插件源码**：它的插件（`dsh-agent-dev` / `dsh-echuan` /
+`dsh-agent-base` / `dsh-browser-native`）在容器启动时按 `.env` 的 `PLUGIN_SPECS`
+从 npm registry 安装到 profile。cto-agent 仍是目录挂载 + link 的旧方式。
+
+`browserless` 不需要本地源码，也不构建镜像，只需能拉取 `ghcr.io/browserless/chromium`
+（首次 `up` 会拉取；网络受限时先配 daemon 镜像加速或宿主代理）。
 
 ## 3. 配置
 
@@ -49,7 +63,15 @@ cp .env.example .env
 | `ECHUAN_PORT` / `DSH_BASE_PORT` / `DSH_DEV_PORT` | 宿主回环端口（8721 / 8090 / 8091） |
 | `DOCKER_SOCKET` | dev-agent 指挥宿主 daemon 的 socket |
 | `DOCKER_PROXY` | devcontainer 访问 ghcr.io 的代理；空 = 直连 |
-| `GH_TOKEN_FILE` | gh 令牌只读文件（模板默认空文件 = 未登录） |
+| `PLUGIN_SPECS` | dev-agent 的插件清单（`<name>@<version>`，空格分隔，顺序即安装顺序） |
+| `GH_TOKEN` | dev-agent 用的 GitHub PAT；留空 = 容器内 gh 未登录 |
+| `BROWSERLESS_IMAGE` | 浏览器镜像，默认官方 `ghcr.io/browserless/chromium:latest`；生产建议固定 tag/digest |
+| `BROWSERLESS_PORT` | 浏览器宿主回环端口，默认 `3001`（容器内 3000） |
+| `BROWSERLESS_TOKEN` | **必填**，访问令牌；`openssl rand -hex 32` 生成，不要用 `test-token` |
+| `BROWSERLESS_CONCURRENT` / `QUEUED` / `TIMEOUT` | 并发会话数 / 排队数 / 会话超时（毫秒） |
+| `BROWSERLESS_SHM_SIZE` | Chrome 共享内存，默认 `2g`（低于 2g 易崩） |
+| `BROWSERLESS_DATA_DIR` | 浏览器用户数据目录，默认 `./data/browserless` |
+| `BROWSERLESS_CONTAINER_NAME` | 容器名，默认 `browserless` |
 
 `.env` 与 `data/`、`secrets/` 都在 `.gitignore` 里，不会进仓。
 
@@ -59,10 +81,11 @@ cp .env.example .env
 ./scripts/up.sh                # 启动并等到 healthy（加 --build 重建镜像）
 ./scripts/down.sh              # 停止并移除容器（数据保留）
 ./scripts/status.sh            # 容器状态 + 端口探活 + 已注册 worker
-./scripts/smoke-test.sh        # 冒烟：readyz、两个 agent HTTP、worker 注册
+./scripts/smoke-test.sh        # 冒烟：readyz、两个 agent HTTP、browserless、worker 注册
 
 docker compose logs -f --tail=100 cto-agent
 docker compose logs -f --tail=100 dev-agent
+docker compose logs -f --tail=100 browserless
 docker compose build echuan    # 只重建某个镜像
 docker compose up -d echuan    # 只更新某个服务
 ```
@@ -74,6 +97,7 @@ docker compose up -d echuan    # 只更新某个服务
 | 驿传库 / 资料 / 工作区 | `$ECHUAN_DATA_DIR`（默认 `~/echuan-v2-data`） | `echuan_v2/scripts/backup.sh` |
 | CTO Agent 会话与 profile | `deployment/data/dsh-home-base` | 目录整体打包即可 |
 | 开发 Agent 会话与 profile | `deployment/data/dsh-home-dev` | 目录整体打包即可 |
+| 浏览器用户数据 / 下载 | `deployment/data/browserless` | 可删（丢失 Cookie / 缓存）；备份按需 |
 
 **注意**：`echuan_v2/scripts/{backup,restore}.sh` 默认按项目名 `echuan-v2` 找容器。现在部署在 `sanding` 项目下，调用时需显式指定：
 
@@ -91,8 +115,9 @@ COMPOSE_PROJECT_NAME=sanding docker compose -f ../../echuan_v2/docker-compose.ym
 | 容器名 | `echuan-v2` / `dsh-agent-base` / `dsh-agent-dev` | 不变 |
 | 端口 | 8721 / 8090 / 8091 | 不变 |
 | 镜像名 | `*-local` | 不变 |
-| 插件挂载 | 各自 compose 内写死 | 不变（同一套挂载，集中配置） |
+| dev-agent 插件 | 宿主目录挂载 + link | 启动时从 npm registry 按 `PLUGIN_SPECS` 安装 |
 | dsh home | 各仓库目录下 `dsh-home/` | 复制到 `deployment/data/`，旧目录保留可回滚 |
+| 浏览器 | 自建 `browserless-stagehand` 镜像（带 stagehand extension） | 官方 `ghcr.io/browserless/chromium`，无扩展 |
 
 回滚：
 
@@ -100,7 +125,7 @@ COMPOSE_PROJECT_NAME=sanding docker compose -f ../../echuan_v2/docker-compose.ym
 cd ~/project/opc/sanding/deployment && ./scripts/down.sh
 cd ~/project/opc/echuan_v2 && docker compose up -d
 cd ~/project/opc/dsh-agent/dsh-agent-base && docker compose up -d
-cd ~/project/opc/dsh-agent/dsh-dev-agent && docker compose up -d
+cd ~/project/opc/sanding/agents/dsh-agent-dev/examples && docker compose up -d
 ```
 
 （旧 `dsh-home` 目录未删，回滚后状态与切换前一致。）
@@ -111,3 +136,8 @@ cd ~/project/opc/dsh-agent/dsh-dev-agent && docker compose up -d
 - agent 里访问平台 502：代理变量没排除 `host.docker.internal`。compose 已把大小写 `NO_PROXY` 成对覆盖，若自行加变量要保持成对。
 - `dsh: skipping profile bundle ...`：profile 里残留了本容器没挂载的插件，删掉 `dsh-home-*/profiles/web/package.json` 中对应的 `dsh.profile.bundles` 与 `dependencies` 条目后重启。
 - 容器 healthy 但 agent 打不开：token 在日志里，`docker compose logs cto-agent | grep token=`。
+- `browserless` 返回 401：`BROWSERLESS_TOKEN` 与客户端使用的 token 不一致（所有端点都鉴权，包括 `/json/version`、`/pressure`）。
+- `browserless` 日志报 `/data` 无权限：镜像内用户是 `blessuser`（UID 999），
+  `chown -R 999:999 deployment/data/browserless` 后重启。
+- `browserless` 反复重启 / Chrome 崩溃：确认 `shm_size` 为 `2g`。
+- 从 agent 容器连不上 `127.0.0.1:3001`：容器里的 127.0.0.1 是它自己，必须用 `host.docker.internal:3001`。

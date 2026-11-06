@@ -1,11 +1,16 @@
 # 三鼎（sanding）交付系统 —— 统一部署编排
 #
-# 三个服务，对应架构文档 v3.5 的三个执行单元：
+# 四个服务，对应架构文档 v3.5 的三个执行单元 + 一个共享浏览器：
 #   echuan      驿传平台（协调面）：需求 / 方案 / 任务 / 交付 / 待办 / 审计
 #   cto-agent   CTO Agent：dsh + dsh-rsi-agent + dsh-domain + dsh-echuan
-#   dev-agent   开发 Agent：dsh + dsh-rsi-agent + dsh-dev-domain + dsh-echuan（含 docker / devcontainer）
+#   dev-agent   开发 Agent：dsh + dsh-rsi-agent + dsh-agent-dev + dsh-echuan（含 docker / devcontainer）
+#   browserless 无头 Chromium：供 agent / 客户端经 CDP(WS) 或 HTTP 调用
 #
-# 源码不在本仓库：build context 与插件挂载都指向同级仓库，见 .env.example 的 *_SRC / *_DOMAIN_SRC。
+# 浏览器说明：0.2.0 起直接使用官方镜像 ghcr.io/browserless/chromium，
+# 不再自建带 stagehand extension 的镜像（扩展已弃用，无需 --load-extension）。
+#
+# 源码：dev-agent 在本仓库 agents/dsh-agent-dev；cto-agent 仍指向同级仓库（见 .env.example 的 *_SRC）。
+# 插件不再挂宿主目录：dev-agent 启动时按 PLUGIN_SPECS 从 registry 安装。
 #
 # 常用命令：
 #   cp .env.example .env && vi .env        # 首次：填路径
@@ -143,6 +148,48 @@ services:
       retries: 5
       start_period: 15s
 
+  # ── 无头浏览器（browserless 官方 Chromium 镜像）───────────────────────────
+  # 只读调用方：agent 容器经 http://host.docker.internal:3001?token=... 访问，
+  # 宿主侧经 http://127.0.0.1:3001 访问；不对外网暴露。
+  browserless:
+    # 生产环境建议固定 tag 或 digest（例如 ghcr.io/browserless/chromium:2.13.0@sha256:...）
+    image: ${BROWSERLESS_IMAGE:-ghcr.io/browserless/chromium:latest}
+    container_name: ${BROWSERLESS_CONTAINER_NAME:-browserless}
+    restart: unless-stopped
+    ports:
+      # 只绑回环；宿主 3001 → 容器 3000（避开宿主常见的 3000 占用）
+      - "127.0.0.1:${BROWSERLESS_PORT:-3000}:3000"
+    environment:
+      TOKEN: ${BROWSERLESS_TOKEN:?请在 .env 中设置 BROWSERLESS_TOKEN（openssl rand -hex 32）}
+      CONCURRENT: ${BROWSERLESS_CONCURRENT:-3}
+      QUEUED: ${BROWSERLESS_QUEUED:-5}
+      TIMEOUT: ${BROWSERLESS_TIMEOUT:-60000}
+      TZ: ${TZ:-Asia/Shanghai}
+      # 不设置 CHROME_FLAGS / --load-extension：stagehand 扩展已弃用
+    shm_size: "${BROWSERLESS_SHM_SIZE:-2g}"
+    volumes:
+      # 浏览器用户数据 / 下载 / 指标落盘，删容器不丢
+      - "${BROWSERLESS_DATA_DIR:-./data/browserless}:/data"
+    networks:
+      - sanding
+    logging: *default-logging
+    # 用镜像自带 curl 探 /pressure（官方推荐的健康端点；镜像内 curl/wget 都有）。
+    # browserless 所有端点都鉴权，令牌由 compose 在解析期从 .env 代入；
+    # 若想改成 /json/version，同样需要带 token。
+    #
+    # 健康判定：只要拿到 HTTP 响应就算活着。200 = 空闲；429 = 实例健康但
+    # 已达并发上限（busy），不应判死。000（连不上）/ 5xx 才算失败。
+    # 注意：compose 里 shell 变量需写 $$，${BROWSERLESS_TOKEN} 仍由解析期代入。
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          code=$$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' "http://127.0.0.1:3000/pressure?token=${BROWSERLESS_TOKEN}" || true); [ "$$code" = "200" ] || [ "$$code" = "429" ]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+
   # ── CTO Agent ────────────────────────────────────────────────────────────
   cto-agent:
     image: ${DSH_BASE_IMAGE:-dsh-agent-base:local}
@@ -184,7 +231,7 @@ services:
   dev-agent:
     image: ${DSH_DEV_IMAGE:-dsh-agent-dev:local}
     build:
-      context: ${DSH_DEV_SRC:-../../dsh-agent/dsh-dev-agent}
+      context: ${DSH_DEV_SRC:-../agents/dsh-agent-dev}
       dockerfile: Dockerfile
       args:
         NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmmirror.com}
@@ -197,6 +244,10 @@ services:
     depends_on:
       echuan:
         condition: service_healthy
+      # browserless 是 dev-agent 的运行时依赖：agent 通过 CDP/HTTP 调用它。
+      # service_healthy 依赖 browserless 的 healthcheck（200/429 均判健康）。
+      browserless:
+        condition: service_healthy
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:
@@ -204,20 +255,19 @@ services:
     volumes:
       # 宿主 Docker socket：docker CLI / devcontainer CLI 指挥宿主 daemon
       - "${DOCKER_SOCKET:-/var/run/docker.sock}:/var/run/docker.sock"
-      # 三个本地插件：目录挂载（只读），启动时由 entrypoint 直接 link
-      - "${DSH_RSI_AGENT_SRC:?请在 .env 中设置 dsh-rsi-agent 路径}:/src/plugins/dsh-rsi-agent:ro"
-      - "${ECHUAN_KIT_DIR:?请在 .env 中设置 echuan kit 路径}:/src/plugins/dsh-echuan:ro"
-      - "${DSH_DEV_DOMAIN_SRC:?请在 .env 中设置 dsh-dev-domain 路径}:/src/plugins/dsh-dev-domain:ro"
+      # 插件不挂宿主目录：启动时按 PLUGIN_SPECS 从 npm registry 安装
       # 项目 / 工作区：agent 与工具容器共享同一份数据
       - "${HOST_PROJECT_PATH:?请在 .env 中设置项目绝对路径}:/workspace"
       # dsh home：profile / 会话 / cordis.patch.yml 由用户直接编辑
       - "${DSH_DEV_HOME_DIR:-./data/dsh-home-dev}:/home/node/.dsh"
-      # gh CLI 令牌：宿主只读文件（chmod 600），绝不写入镜像 / 仓库
-      - "${GH_TOKEN_FILE:-./secrets/gh-token.empty}:/run/secrets/gh_token:ro"
     security_opt: *agent-security-opt
     cap_add: *agent-cap
     environment:
       <<: *agent-env
+      # 插件清单：空格分隔的 <name>@<exact-version>，顺序即安装顺序
+      PLUGIN_SPECS: ${PLUGIN_SPECS:-dsh-agent-dev@0.2.0 dsh-echuan@0.1.0 dsh-agent-base@0.1.0 dsh-browser-native@0.1.0}
+      # GitHub PAT（.env 里配置；留空 = 容器内 gh 未登录）
+      GH_TOKEN: ${GH_TOKEN:-}
       # devcontainer CLI 查询海外 registry（ghcr.io）的 features 清单需要代理。
       # 注意：Docker Desktop 会把宿主 shell 的【小写】代理变量注入容器，且小写
       # no_proxy 不含 host.docker.internal；插件 HTTP 客户端读小写变量，会把访问
