@@ -1,15 +1,16 @@
 # 三鼎（sanding）交付系统 —— 统一部署编排
 #
-# 四个服务，对应架构文档 v3.5 的三个执行单元 + 一个共享浏览器：
+# 五个服务，对应架构文档 v3.5 的执行单元 + 一个共享浏览器：
 #   echuan      驿传平台（协调面）：需求 / 方案 / 任务 / 交付 / 待办 / 审计
 #   cto-agent   CTO Agent：dsh + dsh-agent-cto + dsh-echuan（插件启动时从 npm 安装）
 #   dev-agent   开发 Agent：dsh + dsh-agent-dev + dsh-echuan（含 docker / devcontainer）
+#   pm-agent    产品经理 Agent：dsh + dsh-agent-pm + dsh-echuan（插件启动时从 npm 安装）
 #   browserless 无头 Chromium：供 agent / 客户端经 CDP(WS) 或 HTTP 调用
 #
 # 浏览器说明：0.2.0 起直接使用官方镜像 ghcr.io/browserless/chromium，
 # 不再自建带 stagehand extension 的镜像（扩展已弃用，无需 --load-extension）。
 #
-# 源码：两个 agent 都在本仓库 agents/（dsh-agent-cto / dsh-agent-dev）。
+# 源码：三个 agent 都在本仓库 agents/（dsh-agent-cto / dsh-agent-dev / dsh-agent-pm）。
 # 插件一律不挂宿主目录：启动时按 DSH_*_PLUGIN_SPECS 从 npm registry 安装。
 #
 # 常用命令：
@@ -274,6 +275,42 @@ services:
       http_proxy: ${DOCKER_PROXY:-}
       https_proxy: ${DOCKER_PROXY:-}
       all_proxy: ${DOCKER_PROXY:-}
+    networks:
+      - sanding
+    logging: *default-logging
+    healthcheck: *agent-healthcheck
+
+  # ── 产品经理 Agent ────────────────────────────────────────────────────────
+  pm-agent:
+    image: ${DSH_PM_IMAGE:-dsh-agent-pm:local}
+    build:
+      context: ${DSH_PM_SRC:-../agents/dsh-agent-pm}
+      dockerfile: Dockerfile
+      args:
+        NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmmirror.com}
+        DSH_VERSION: ${DSH_VERSION:-0.2.1-rc.2}
+    container_name: ${DSH_PM_CONTAINER_NAME:-dsh-agent-pm}
+    restart: unless-stopped
+    depends_on:
+      echuan:
+        condition: service_healthy
+      browserless:
+        condition: service_healthy
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "127.0.0.1:${DSH_PM_PORT:-8093}:3080"
+    volumes:
+      # 插件不挂宿主目录：启动时按 PLUGIN_SPECS 从 npm registry 安装
+      # 项目 / 工作区：agent 与宿主共享同一份数据
+      - "${HOST_PROJECT_PATH:?请在 .env 中设置项目绝对路径}:/workspace"
+      # dsh home：profile / 会话 / cordis.patch.yml 由用户直接编辑
+      - "${DSH_PM_HOME_DIR:-./data/dsh-home-pm}:/home/node/.dsh"
+    security_opt: *agent-security-opt
+    cap_add: *agent-cap
+    environment:
+      <<: *agent-env
+      PLUGIN_SPECS: ${DSH_PM_PLUGIN_SPECS:-dsh-agent-pm@0.1.0 dsh-echuan@0.1.0 dsh-agent-base@0.1.0 dsh-browser-native@0.1.0}
     networks:
       - sanding
     logging: *default-logging

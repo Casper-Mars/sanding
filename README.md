@@ -9,12 +9,13 @@ https://ecn3asgw8dff.feishu.cn/wiki/H5m4wpOFoiu3Wvk6JAYc7ZMcnsd
 
 ## 本仓库是什么
 
-**以部署为主，含两个 Agent 的镜像源码。** `agents/dsh-agent-cto` / `agents/dsh-agent-dev` 是构建对应镜像的源码（Dockerfile + 入口脚本 + 部署示例），其余组件各自独立成仓：
+**以部署为主，含三个 Agent 的镜像源码。** `agents/dsh-agent-cto` / `dsh-agent-pm` / `dsh-agent-dev` 是构建对应镜像的源码（Dockerfile + 入口脚本 + 部署示例），其余组件各自独立成仓：
 
 | 服务 | 角色 | 仓库 |
 | --- | --- | --- |
 | `echuan` | 驿传平台（协调面：需求/方案/任务/交付/待办/审计） | `../echuan_v2` |
 | `cto-agent` | CTO Agent（dsh + 插件 + git） | `agents/dsh-agent-cto`（本仓库） |
+| `pm-agent` | 产品经理 Agent（dsh + 插件 + git） | `agents/dsh-agent-pm`（本仓库） |
 | `dev-agent` | 开发 Agent（dsh + 插件 + docker/devcontainer） | `agents/dsh-agent-dev`（本仓库） |
 
 ## 目录
@@ -23,6 +24,7 @@ https://ecn3asgw8dff.feishu.cn/wiki/H5m4wpOFoiu3Wvk6JAYc7ZMcnsd
 sanding/
 ├── agents/
 │   ├── dsh-agent-cto/   # CTO Agent 镜像源码（构建为主，examples/ 是部署示例）
+│   ├── dsh-agent-pm/    # 产品经理 Agent 镜像源码（同上）
 │   └── dsh-agent-dev/   # 开发 Agent 镜像源码（同上）
 └── deployment/          # 统一 docker compose 部署
     ├── docker-compose.yml

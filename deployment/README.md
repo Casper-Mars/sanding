@@ -1,6 +1,6 @@
 # 三鼎（Sanding）统一部署
 
-一套 compose 起四个服务（驿传 + 两个 Agent + 一个共享无头浏览器），
+一套 compose 起五个服务（驿传 + 三个 Agent + 一个共享无头浏览器），
 替代原先「各仓库目录里各自 `docker compose up`」的方式。
 
 > **0.2.0 起不再需要自建带 stagehand extension 的浏览器镜像**：`browserless`
@@ -13,6 +13,7 @@
 | --- | --- | --- | --- | --- |
 | `echuan` | `echuan-v2` | `echuan-v2:local` | `127.0.0.1:8721` → 8720 | 驿传平台：状态唯一真相源 |
 | `cto-agent` | `dsh-agent-cto` | `dsh-agent-cto:local` | `127.0.0.1:8090` → 3080 | CTO Agent：requirement / design / breakdown |
+| `pm-agent` | `dsh-agent-pm` | `dsh-agent-pm:local` | `127.0.0.1:8093` → 3080 | 产品经理 Agent：需求 / 方案 / 拆解 |
 | `dev-agent` | `dsh-agent-dev` | `dsh-agent-dev:local` | `127.0.0.1:8091` → 3080 | 开发 Agent：dev（含 docker / devcontainer 能力） |
 | `browserless` | `browserless` | `ghcr.io/browserless/chromium:latest` | `127.0.0.1:3001` → 3000 | 无头 Chromium：CDP / HTTP 供 agent 调用 |
 
@@ -29,9 +30,9 @@
 
 宿主机上需要存在（路径写在 `.env`）：
 
-- 源码：`ECHUAN_SRC`（同级仓库）+ `DSH_CTO_SRC` / `DSH_DEV_SRC`（本仓库 `agents/`）
+- 源码：`ECHUAN_SRC`（同级仓库）+ `DSH_CTO_SRC` / `DSH_PM_SRC` / `DSH_DEV_SRC`（本仓库 `agents/`）
 - **不需要任何宿主插件源码**：两个 agent 的插件都在容器启动时按 `.env` 的
-  `DSH_CTO_PLUGIN_SPECS` / `DSH_DEV_PLUGIN_SPECS` 从 npm registry 安装到 profile。
+  `DSH_CTO_PLUGIN_SPECS` / `DSH_PM_PLUGIN_SPECS` / `DSH_DEV_PLUGIN_SPECS` 从 npm registry 安装到 profile。
 
 `browserless` 不需要本地源码，也不构建镜像，只需能拉取 `ghcr.io/browserless/chromium`
 （首次 `up` 会拉取；网络受限时先配 daemon 镜像加速或宿主代理）。
@@ -48,11 +49,12 @@ cp .env.example .env
 | --- | --- |
 | `HOST_PROJECT_PATH` | agent 共享工作区（挂 `/workspace`） |
 | `ECHUAN_DATA_DIR` | 驿传 SQLite / objects / workspaces 宿主目录 |
-| `DSH_CTO_HOME_DIR` / `DSH_DEV_HOME_DIR` | 两个 agent 的 dsh home（profile、会话、`cordis.patch.yml`） |
-| `ECHUAN_PORT` / `DSH_CTO_PORT` / `DSH_DEV_PORT` | 宿主回环端口（8721 / 8090 / 8091） |
+| `DSH_CTO_HOME_DIR` / `DSH_PM_HOME_DIR` / `DSH_DEV_HOME_DIR` | 三个 agent 的 dsh home（profile、会话、`cordis.patch.yml`） |
+| `ECHUAN_PORT` / `DSH_CTO_PORT` / `DSH_PM_PORT` / `DSH_DEV_PORT` | 宿主回环端口（8721 / 8090 / 8093 / 8091） |
 | `DOCKER_SOCKET` | dev-agent 指挥宿主 daemon 的 socket |
 | `DOCKER_PROXY` | devcontainer 访问 ghcr.io 的代理；空 = 直连 |
 | `DSH_CTO_PLUGIN_SPECS` | cto-agent 的插件清单（`<name>@<version>`，空格分隔，顺序即安装顺序） |
+| `DSH_PM_PLUGIN_SPECS` | pm-agent 的插件清单（同上） |
 | `DSH_DEV_PLUGIN_SPECS` | dev-agent 的插件清单（同上） |
 | `GH_TOKEN` | dev-agent 用的 GitHub PAT；留空 = 容器内 gh 未登录 |
 | `BROWSERLESS_IMAGE` | 浏览器镜像，默认官方 `ghcr.io/browserless/chromium:latest`；生产建议固定 tag/digest |
@@ -86,6 +88,7 @@ docker compose up -d echuan    # 只更新某个服务
 | --- | --- | --- |
 | 驿传库 / 资料 / 工作区 | `$ECHUAN_DATA_DIR`（默认 `~/echuan-v2-data`） | `echuan_v2/scripts/backup.sh` |
 | CTO Agent 会话与 profile | `deployment/data/dsh-home-cto` | 目录整体打包即可 |
+| PM Agent 会话与 profile | `deployment/data/dsh-home-pm` | 目录整体打包即可 |
 | 开发 Agent 会话与 profile | `deployment/data/dsh-home-dev` | 目录整体打包即可 |
 | 浏览器用户数据 / 下载 | `deployment/data/browserless` | 可删（丢失 Cookie / 缓存）；备份按需 |
 

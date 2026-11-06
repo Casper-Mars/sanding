@@ -1,0 +1,16 @@
+# 构建上下文精简：运行期通过卷挂载/宿主机提供的内容不进入镜像
+# 构建只需：Dockerfile / entrypoint.sh
+.git
+.gitignore
+.env
+.env.*
+!.env.example
+node_modules
+**/node_modules
+*.tgz
+*.log
+README.md
+docker-compose.yml
+# 部署示例不参与构建
+examples/
+dsh-home/
