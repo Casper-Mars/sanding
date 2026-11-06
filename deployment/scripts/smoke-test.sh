@@ -11,7 +11,7 @@ cd "$(dirname "$0")/.."
 set -a; . ./.env; set +a
 
 ECHUAN_PORT="${ECHUAN_PORT:-8721}"
-DSH_BASE_PORT="${DSH_BASE_PORT:-8090}"
+DSH_CTO_PORT="${DSH_CTO_PORT:-8090}"
 DSH_DEV_PORT="${DSH_DEV_PORT:-8091}"
 BROWSERLESS_PORT="${BROWSERLESS_PORT:-3001}"
 
@@ -25,7 +25,7 @@ code=$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:${ECHUAN_PORT}/r
 
 echo "== 2. Agent 容器 HTTP =="
 # dsh web 默认 token 鉴权，未带 token 返回 401；有响应即说明服务已起。
-for pair in "cto-agent:${DSH_BASE_PORT}" "dev-agent:${DSH_DEV_PORT}"; do
+for pair in "cto-agent:${DSH_CTO_PORT}" "dev-agent:${DSH_DEV_PORT}"; do
   name=${pair%%:*}; port=${pair##*:}
   code=$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:${port}/" || echo 000)
   case "$code" in

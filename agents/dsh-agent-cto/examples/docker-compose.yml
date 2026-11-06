@@ -1,0 +1,74 @@
+# dsh-agent-cto 部署示例（macOS 宿主）
+#
+# 这是 examples，不是项目主体：镜像由上一级目录的 Dockerfile 构建（context = ..）。
+#   - 插件【不入镜像、也不挂宿主目录】：启动时按 PLUGIN_SPECS 从 npm registry 安装；
+#   - 没有 docker.sock / devcontainer CLI：CTO 不做代码交付；
+#   - 项目目录同路径挂载，agent 读写宿主文件。
+#
+# 使用：
+#   1. cp .env.example .env，设置 HOST_PROJECT_PATH（可选调整 PLUGIN_SPECS）
+#   2. docker compose up -d --build
+#   3. 打开 http://127.0.0.1:8092 （token 见 docker compose logs）
+#   4. 验证：./smoke-test.sh
+
+services:
+  dsh:
+    image: dsh-agent-cto:local
+    build:
+      context: ..
+      dockerfile: Dockerfile
+      args:
+        NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmmirror.com}
+        DSH_VERSION: ${DSH_VERSION:-0.2.1-rc.2}
+    container_name: dsh-agent-cto
+    restart: unless-stopped
+    # 让容器用 host.docker.internal 访问宿主服务（驿传平台）。
+    # macOS Docker Desktop 原生支持；Linux 需要这条 host-gateway 映射。
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "127.0.0.1:${DSH_PORT:-8092}:3080"
+    volumes:
+      # 项目/工作区：macOS 上直接编辑宿主文件，agent 与宿主共享同一份数据
+      - ${HOST_PROJECT_PATH:?请在 .env 中设置项目绝对路径}:/workspace
+      # dsh home：直接挂到宿主目录，profile / 会话 / cordis.patch.yml 都由用户自己管理
+      - ${DSH_HOME_DIR:-./dsh-home}:/home/node/.dsh
+    security_opt:
+      # dsh 命令级沙箱在容器内依赖 bubblewrap（unshare）；缺省会被 seccomp/apparmor 拦截
+      - seccomp=unconfined
+      - apparmor=unconfined
+    cap_add:
+      - SYS_ADMIN
+    environment:
+      DSH_HOME: /home/node/.dsh
+      DSH_PROFILE: ${DSH_PROFILE:-web}
+      # 插件清单：空格分隔的 <name>@<exact-version>，顺序即安装顺序。
+      # 启动时逐条 `dsh plugin add`（幂等）。
+      PLUGIN_SPECS: ${PLUGIN_SPECS:-dsh-agent-cto@0.1.0 dsh-echuan@0.1.0 dsh-agent-base@0.1.0 dsh-browser-native@0.1.0}
+      # 安装插件走哪个 registry（npmmirror；留空则用 pnpm 自己的配置）
+      NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmmirror.com}
+      # 项目路径
+      HOST_PROJECT_PATH: ${HOST_PROJECT_PATH:?请在 .env 中设置项目绝对路径}
+      # 插件里的 HTTP 客户端读小写代理变量；大小写成对显式覆盖，
+      # 避免 Docker Desktop 注入的小写代理把访问宿主平台的请求发给 7890。
+      HTTP_PROXY: ${DOCKER_PROXY:-}
+      HTTPS_PROXY: ${DOCKER_PROXY:-}
+      ALL_PROXY: ${DOCKER_PROXY:-}
+      http_proxy: ${DOCKER_PROXY:-}
+      https_proxy: ${DOCKER_PROXY:-}
+      all_proxy: ${DOCKER_PROXY:-}
+      # 内网/宿主地址一律直连：驿传平台在宿主 127.0.0.1:8721（仅回环发布）
+      NO_PROXY: localhost,127.0.0.1,::1,host.docker.internal,192.168.65.254,m.daocloud.io
+      no_proxy: localhost,127.0.0.1,::1,host.docker.internal,192.168.65.254,m.daocloud.io
+    healthcheck:
+      # 基础镜像没有 curl，用 node 探活：
+      #  - dsh web 绑定容器 eth0 IP，不是 127.0.0.1；
+      #  - 默认 token 鉴权，无 token 返回 401，有响应即说明 HTTP 服务就绪。
+      test:
+        - CMD-SHELL
+        - >-
+          node -e "const os=require('os');const ip=Object.values(os.networkInterfaces()).flat().find(i=>i.family==='IPv4'&&!i.internal).address;require('http').get({host:ip,port:3080,path:'/'},r=>{r.resume();process.exit(0)}).on('error',()=>process.exit(1))"
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s

@@ -2,15 +2,15 @@
 #
 # 四个服务，对应架构文档 v3.5 的三个执行单元 + 一个共享浏览器：
 #   echuan      驿传平台（协调面）：需求 / 方案 / 任务 / 交付 / 待办 / 审计
-#   cto-agent   CTO Agent：dsh + dsh-rsi-agent + dsh-domain + dsh-echuan
-#   dev-agent   开发 Agent：dsh + dsh-rsi-agent + dsh-agent-dev + dsh-echuan（含 docker / devcontainer）
+#   cto-agent   CTO Agent：dsh + dsh-agent-cto + dsh-echuan（插件启动时从 npm 安装）
+#   dev-agent   开发 Agent：dsh + dsh-agent-dev + dsh-echuan（含 docker / devcontainer）
 #   browserless 无头 Chromium：供 agent / 客户端经 CDP(WS) 或 HTTP 调用
 #
 # 浏览器说明：0.2.0 起直接使用官方镜像 ghcr.io/browserless/chromium，
 # 不再自建带 stagehand extension 的镜像（扩展已弃用，无需 --load-extension）。
 #
-# 源码：dev-agent 在本仓库 agents/dsh-agent-dev；cto-agent 仍指向同级仓库（见 .env.example 的 *_SRC）。
-# 插件不再挂宿主目录：dev-agent 启动时按 PLUGIN_SPECS 从 registry 安装。
+# 源码：两个 agent 都在本仓库 agents/（dsh-agent-cto / dsh-agent-dev）。
+# 插件一律不挂宿主目录：启动时按 DSH_*_PLUGIN_SPECS 从 npm registry 安装。
 #
 # 常用命令：
 #   cp .env.example .env && vi .env        # 首次：填路径
@@ -56,11 +56,7 @@ x-agent-healthcheck: &agent-healthcheck
 # 两个 agent 共用的环境变量
 x-agent-env: &agent-env
   DSH_HOME: /home/node/.dsh
-  # 插件挂载根目录（entrypoint / ensure-plugins 读取）
-  PLUGIN_SRC_DIR: /src/plugins
   DSH_PROFILE: ${DSH_PROFILE:-web}
-  # peer 依赖版本，必须与镜像内 dsh 版本一致
-  DSH_PEER_VERSION: ${DSH_PEER_VERSION:-0.2.1-rc.2}
   # 项目路径：devcontainer CLI 的 --workspace-folder
   HOST_PROJECT_PATH: ${HOST_PROJECT_PATH:?请在 .env 中设置项目绝对路径}
   # 内网 / 宿主地址一律直连：驿传平台在宿主 127.0.0.1:8721（仅回环发布），
@@ -154,7 +150,7 @@ services:
   browserless:
     # 生产环境建议固定 tag 或 digest（例如 ghcr.io/browserless/chromium:2.13.0@sha256:...）
     image: ${BROWSERLESS_IMAGE:-ghcr.io/browserless/chromium:latest}
-    container_name: ${BROWSERLESS_CONTAINER_NAME:-browserless}
+    container_name: browserless
     restart: unless-stopped
     ports:
       # 只绑回环；宿主 3001 → 容器 3000（避开宿主常见的 3000 占用）
@@ -192,14 +188,14 @@ services:
 
   # ── CTO Agent ────────────────────────────────────────────────────────────
   cto-agent:
-    image: ${DSH_BASE_IMAGE:-dsh-agent-base:local}
+    image: ${DSH_CTO_IMAGE:-dsh-agent-cto:local}
     build:
-      context: ${DSH_BASE_SRC:-../../dsh-agent/dsh-agent-base}
+      context: ${DSH_CTO_SRC:-../agents/dsh-agent-cto}
       dockerfile: Dockerfile
       args:
         NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmmirror.com}
         DSH_VERSION: ${DSH_VERSION:-0.2.1-rc.2}
-    container_name: ${DSH_BASE_CONTAINER_NAME:-dsh-agent-base}
+    container_name: ${DSH_CTO_CONTAINER_NAME:-dsh-agent-cto}
     restart: unless-stopped
     depends_on:
       echuan:
@@ -208,20 +204,20 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:
-      - "127.0.0.1:${DSH_BASE_PORT:-8090}:3080"
+      - "127.0.0.1:${DSH_CTO_PORT:-8090}:3080"
     volumes:
-      # 三个本地插件：目录挂载（只读），启动时由 entrypoint 直接 link
-      - "${DSH_RSI_AGENT_SRC:?请在 .env 中设置 dsh-rsi-agent 路径}:/src/plugins/dsh-rsi-agent:ro"
-      - "${DSH_DOMAIN_SRC:?请在 .env 中设置 dsh-domain 路径}:/src/plugins/dsh-domain:ro"
-      - "${ECHUAN_KIT_DIR:?请在 .env 中设置 echuan kit 路径}:/src/plugins/dsh-echuan:ro"
+      # 插件不挂宿主目录：启动时按 DSH_CTO_PLUGIN_SPECS 从 npm registry 安装
       # 项目 / 工作区：agent 与宿主共享同一份数据
       - "${HOST_PROJECT_PATH:?请在 .env 中设置项目绝对路径}:/workspace"
       # dsh home：profile / 会话 / cordis.patch.yml 由用户直接编辑
-      - "${DSH_BASE_HOME_DIR:-./data/dsh-home-base}:/home/node/.dsh"
+      - "${DSH_CTO_HOME_DIR:-./data/dsh-home-cto}:/home/node/.dsh"
     security_opt: *agent-security-opt
     cap_add: *agent-cap
     environment:
       <<: *agent-env
+      # 插件清单：空格分隔的 <name>@<exact-version>，顺序即安装顺序
+      # 镜像入口统一读 PLUGIN_SPECS；这里把服务级变量映射过去，便于 .env 里分开配置
+      PLUGIN_SPECS: ${DSH_CTO_PLUGIN_SPECS:-dsh-agent-cto@0.1.0 dsh-echuan@0.1.0 dsh-agent-base@0.1.0 dsh-browser-native@0.1.0}
     networks:
       - sanding
     logging: *default-logging
@@ -265,7 +261,7 @@ services:
     environment:
       <<: *agent-env
       # 插件清单：空格分隔的 <name>@<exact-version>，顺序即安装顺序
-      PLUGIN_SPECS: ${PLUGIN_SPECS:-dsh-agent-dev@0.2.0 dsh-echuan@0.1.0 dsh-agent-base@0.1.0 dsh-browser-native@0.1.0}
+      PLUGIN_SPECS: ${DSH_DEV_PLUGIN_SPECS:-dsh-agent-dev@0.2.0 dsh-echuan@0.1.0 dsh-agent-base@0.1.0 dsh-browser-native@0.1.0}
       # GitHub PAT（.env 里配置；留空 = 容器内 gh 未登录）
       GH_TOKEN: ${GH_TOKEN:-}
       # devcontainer CLI 查询海外 registry（ghcr.io）的 features 清单需要代理。

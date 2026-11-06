@@ -12,7 +12,7 @@
 | compose 服务 | 容器名 | 镜像 | 宿主端口 | 作用 |
 | --- | --- | --- | --- | --- |
 | `echuan` | `echuan-v2` | `echuan-v2:local` | `127.0.0.1:8721` → 8720 | 驿传平台：状态唯一真相源 |
-| `cto-agent` | `dsh-agent-base` | `dsh-agent-base:local` | `127.0.0.1:8090` → 3080 | CTO Agent：requirement / design / breakdown |
+| `cto-agent` | `dsh-agent-cto` | `dsh-agent-cto:local` | `127.0.0.1:8090` → 3080 | CTO Agent：requirement / design / breakdown |
 | `dev-agent` | `dsh-agent-dev` | `dsh-agent-dev:local` | `127.0.0.1:8091` → 3080 | 开发 Agent：dev（含 docker / devcontainer 能力） |
 | `browserless` | `browserless` | `ghcr.io/browserless/chromium:latest` | `127.0.0.1:3001` → 3000 | 无头 Chromium：CDP / HTTP 供 agent 调用 |
 
@@ -29,20 +29,9 @@
 
 宿主机上需要存在（路径写在 `.env`）：
 
-- 源码：`ECHUAN_SRC` / `DSH_BASE_SRC`（同级仓库）+ `DSH_DEV_SRC`（本仓库 `agents/dsh-agent-dev`）
-- cto-agent 的插件仓库，且 **已构建**：`DSH_RSI_AGENT_SRC` / `DSH_DOMAIN_SRC` / `ECHUAN_KIT_DIR`
-  - `dsh-rsi-agent`、`dsh-domain`：`dist-server/index.js`
-  - `echuan kit`：`lib/index.js`
-
-```bash
-pnpm -C ~/project/opc/dsh-rsi-agent build
-pnpm -C ~/project/opc/dsh-domain build
-pnpm -C ~/project/opc/echuan_v2/kit build
-```
-
-**dev-agent 不需要任何宿主插件源码**：它的插件（`dsh-agent-dev` / `dsh-echuan` /
-`dsh-agent-base` / `dsh-browser-native`）在容器启动时按 `.env` 的 `PLUGIN_SPECS`
-从 npm registry 安装到 profile。cto-agent 仍是目录挂载 + link 的旧方式。
+- 源码：`ECHUAN_SRC`（同级仓库）+ `DSH_CTO_SRC` / `DSH_DEV_SRC`（本仓库 `agents/`）
+- **不需要任何宿主插件源码**：两个 agent 的插件都在容器启动时按 `.env` 的
+  `DSH_CTO_PLUGIN_SPECS` / `DSH_DEV_PLUGIN_SPECS` 从 npm registry 安装到 profile。
 
 `browserless` 不需要本地源码，也不构建镜像，只需能拉取 `ghcr.io/browserless/chromium`
 （首次 `up` 会拉取；网络受限时先配 daemon 镜像加速或宿主代理）。
@@ -59,11 +48,12 @@ cp .env.example .env
 | --- | --- |
 | `HOST_PROJECT_PATH` | agent 共享工作区（挂 `/workspace`） |
 | `ECHUAN_DATA_DIR` | 驿传 SQLite / objects / workspaces 宿主目录 |
-| `DSH_BASE_HOME_DIR` / `DSH_DEV_HOME_DIR` | 两个 agent 的 dsh home（profile、会话、`cordis.patch.yml`） |
-| `ECHUAN_PORT` / `DSH_BASE_PORT` / `DSH_DEV_PORT` | 宿主回环端口（8721 / 8090 / 8091） |
+| `DSH_CTO_HOME_DIR` / `DSH_DEV_HOME_DIR` | 两个 agent 的 dsh home（profile、会话、`cordis.patch.yml`） |
+| `ECHUAN_PORT` / `DSH_CTO_PORT` / `DSH_DEV_PORT` | 宿主回环端口（8721 / 8090 / 8091） |
 | `DOCKER_SOCKET` | dev-agent 指挥宿主 daemon 的 socket |
 | `DOCKER_PROXY` | devcontainer 访问 ghcr.io 的代理；空 = 直连 |
-| `PLUGIN_SPECS` | dev-agent 的插件清单（`<name>@<version>`，空格分隔，顺序即安装顺序） |
+| `DSH_CTO_PLUGIN_SPECS` | cto-agent 的插件清单（`<name>@<version>`，空格分隔，顺序即安装顺序） |
+| `DSH_DEV_PLUGIN_SPECS` | dev-agent 的插件清单（同上） |
 | `GH_TOKEN` | dev-agent 用的 GitHub PAT；留空 = 容器内 gh 未登录 |
 | `BROWSERLESS_IMAGE` | 浏览器镜像，默认官方 `ghcr.io/browserless/chromium:latest`；生产建议固定 tag/digest |
 | `BROWSERLESS_PORT` | 浏览器宿主回环端口，默认 `3001`（容器内 3000） |
@@ -95,7 +85,7 @@ docker compose up -d echuan    # 只更新某个服务
 | 数据 | 位置 | 备份 |
 | --- | --- | --- |
 | 驿传库 / 资料 / 工作区 | `$ECHUAN_DATA_DIR`（默认 `~/echuan-v2-data`） | `echuan_v2/scripts/backup.sh` |
-| CTO Agent 会话与 profile | `deployment/data/dsh-home-base` | 目录整体打包即可 |
+| CTO Agent 会话与 profile | `deployment/data/dsh-home-cto` | 目录整体打包即可 |
 | 开发 Agent 会话与 profile | `deployment/data/dsh-home-dev` | 目录整体打包即可 |
 | 浏览器用户数据 / 下载 | `deployment/data/browserless` | 可删（丢失 Cookie / 缓存）；备份按需 |
 
@@ -112,10 +102,10 @@ COMPOSE_PROJECT_NAME=sanding docker compose -f ../../echuan_v2/docker-compose.ym
 | --- | --- | --- |
 | 启动方式 | 三个目录各自 `docker compose up` | 本目录一条 `docker compose up -d` |
 | compose 项目名 | `echuan-v2` / `dsh-agent-base` / `dsh-dev-agent` | 统一 `sanding` |
-| 容器名 | `echuan-v2` / `dsh-agent-base` / `dsh-agent-dev` | 不变 |
+| 容器名 | `echuan-v2` / `dsh-agent-base` / `dsh-agent-dev` | `echuan-v2` / `dsh-agent-cto` / `dsh-agent-dev` |
 | 端口 | 8721 / 8090 / 8091 | 不变 |
 | 镜像名 | `*-local` | 不变 |
-| dev-agent 插件 | 宿主目录挂载 + link | 启动时从 npm registry 按 `PLUGIN_SPECS` 安装 |
+
 | dsh home | 各仓库目录下 `dsh-home/` | 复制到 `deployment/data/`，旧目录保留可回滚 |
 | 浏览器 | 自建 `browserless-stagehand` 镜像（带 stagehand extension） | 官方 `ghcr.io/browserless/chromium`，无扩展 |
 
@@ -124,7 +114,7 @@ COMPOSE_PROJECT_NAME=sanding docker compose -f ../../echuan_v2/docker-compose.ym
 ```bash
 cd ~/project/opc/sanding/deployment && ./scripts/down.sh
 cd ~/project/opc/echuan_v2 && docker compose up -d
-cd ~/project/opc/dsh-agent/dsh-agent-base && docker compose up -d
+cd ~/project/opc/sanding/agents/dsh-agent-cto/examples && docker compose up -d
 cd ~/project/opc/sanding/agents/dsh-agent-dev/examples && docker compose up -d
 ```
 
