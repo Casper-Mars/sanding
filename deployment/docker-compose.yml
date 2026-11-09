@@ -65,6 +65,7 @@ x-agent-env: &agent-env
   # 只能经 host.docker.internal / 192.168.65.254 访问，不能过代理。
   NO_PROXY: localhost,127.0.0.1,::1,host.docker.internal,192.168.65.254,echuan,m.daocloud.io
   no_proxy: localhost,127.0.0.1,::1,host.docker.internal,192.168.65.254,echuan,m.daocloud.io
+  NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmmirror.com}
 
 services:
   # ── 驿传平台 ──────────────────────────────────────────────────────────────
