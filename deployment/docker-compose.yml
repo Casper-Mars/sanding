@@ -66,6 +66,8 @@ x-agent-env: &agent-env
   NO_PROXY: localhost,127.0.0.1,::1,host.docker.internal,192.168.65.254,echuan,m.daocloud.io
   no_proxy: localhost,127.0.0.1,::1,host.docker.internal,192.168.65.254,echuan,m.daocloud.io
   NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmmirror.com}
+  # GitHub PAT（.env 里配置；留空 = 容器内 gh 未登录）
+  GH_PAT_TOKEN: ${GH_TOKEN:-}
 
 services:
   # ── 驿传平台 ──────────────────────────────────────────────────────────────
@@ -266,8 +268,6 @@ services:
       <<: *agent-env
       # 插件清单：空格分隔的 <name>@<exact-version>，顺序即安装顺序
       PLUGIN_SPECS: ${DSH_DEV_PLUGIN_SPECS:-dsh-agent-dev@0.2.0 dsh-echuan@0.1.0 dsh-agent-base@0.1.0 dsh-browser-native@0.1.0}
-      # GitHub PAT（.env 里配置；留空 = 容器内 gh 未登录）
-      GH_TOKEN: ${GH_TOKEN:-}
       # devcontainer CLI 查询海外 registry（ghcr.io）的 features 清单需要代理。
       # 注意：Docker Desktop 会把宿主 shell 的【小写】代理变量注入容器，且小写
       # no_proxy 不含 host.docker.internal；插件 HTTP 客户端读小写变量，会把访问

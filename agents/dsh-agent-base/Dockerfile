@@ -31,6 +31,13 @@ ARG DSH_VERSION=0.2.1-rc.2
 # pnpm 版本：与插件仓库 packageManager 字段一致
 ARG PNPM_VERSION=11.7.0
 
+# GitHub CLI 版本：与宿主 gh 对齐（2.95.0）。升级时显式改这里。
+# 镜像只装官方 release 的 .deb，不含任何凭据。
+ARG GH_VERSION=2.95.0
+
+# 构建期访问 github.com 的代理（留空 = 直连 / 沿用 Docker Desktop 注入的构建代理）
+ARG GH_PROXY=
+
 # 系统依赖：git（dsh 工作流 / 项目根探测）、ca-certificates、bubblewrap（命令级沙箱）。
 # 容器以 root 运行 dsh（不降权）：root 免除 dsh home 与 workspace 的写权限问题。
 RUN set -eux; \
@@ -40,8 +47,39 @@ RUN set -eux; \
       "$APT_MIRROR" "$APT_MIRROR" "$APT_SECURITY_MIRROR" > /etc/apt/sources.list; \
     apt-get update \
  && apt-get install -y --no-install-recommends \
-      git ca-certificates bubblewrap \
+      git ca-certificates bubblewrap curl \
  && rm -rf /var/lib/apt/lists/*
+
+ # ---------------------------------------------------------------------------
+# GitHub CLI（gh）：
+#   官方 release 的 .deb（按 dpkg 架构选包），版本钉死 + checksums 校验。
+#   镜像只装二进制，不含任何令牌；PAT 在运行时由部署层以 GH_TOKEN 注入（见 entrypoint.sh）。
+#   注意：.deb 必须保留官方文件名，checksums.txt 里记录的是原文件名。
+# ---------------------------------------------------------------------------
+RUN set -eux; \
+    if [ -n "$GH_PROXY" ]; then \
+      export HTTP_PROXY="$GH_PROXY" HTTPS_PROXY="$GH_PROXY" \
+             http_proxy="$GH_PROXY" https_proxy="$GH_PROXY"; \
+    fi; \
+    arch="$(dpkg --print-architecture)"; \
+    deb="gh_${GH_VERSION}_linux_${arch}.deb"; \
+    base="https://github.com/cli/cli/releases/download/v${GH_VERSION}"; \
+    curl -fsSL --retry 3 --retry-delay 2 -o "/tmp/${deb}" "${base}/${deb}"; \
+    curl -fsSL --retry 3 --retry-delay 2 -o /tmp/gh.sha256 "${base}/gh_${GH_VERSION}_checksums.txt"; \
+    ( cd /tmp && grep " ${deb}\$" gh.sha256 | sha256sum -c - ); \
+    dpkg -i "/tmp/${deb}"; \
+    rm -f "/tmp/${deb}" /tmp/gh.sha256; \
+    gh --version
+
+# gh 的容器内配置（非机密，随镜像发布）：
+#   容器里没有宿主 keychain，git 操作一律走 HTTPS + 令牌，
+#   避免因为没有 ssh key（或 key 带 passphrase）而失败。
+RUN mkdir -p /root/.config/gh \
+ && printf 'git_protocol: https\nprompt: disabled\n' > /root/.config/gh/config.yml
+
+ENV GH_CONFIG_DIR=/root/.config/gh \
+    GH_PROMPT_DISABLED=1 \
+    GH_NO_UPDATE_NOTIFIER=1
 
 # DeepSeek Harness + pnpm（npm 走国内 npmmirror 镜像）
 #   pnpm 用 corepack 激活：`dsh plugin` 会把参数转发给 pnpm，运行期必需。
