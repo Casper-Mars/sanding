@@ -17,6 +17,12 @@ https://ecn3asgw8dff.feishu.cn/wiki/H5m4wpOFoiu3Wvk6JAYc7ZMcnsd
 | `cto-agent` | CTO Agent（dsh-agent-base 镜像 + cto 插件组） | `agents/dsh-agent-base`（本仓库） |
 | `pm-agent` | 产品经理 Agent（同一镜像 + pm 插件组） | `agents/dsh-agent-base`（本仓库） |
 | `dev-agent` | 开发 Agent（dsh + 插件 + docker/devcontainer） | `agents/dsh-agent-dev`（本仓库） |
+| `dsh-web-control` | Web 控制面：一个界面管 cto / pm / dev（开发预览，非 compose 服务） | `../dsh-web-control` |
+
+Web 控制面（`dsh-web-control`）是**可选组件**：不在本仓库，也不进 `deployment` 的 compose，
+而是宿主上独立起的进程，通过三个 Agent 的宿主回环端口接入，只做接入 / 路由 / 呈现 / 审计。
+任务编排、重试与验收仍归驿传。启动方式见
+[deployment/README.md](deployment/README.md#6-web-控制面可选开发态)。
 
 ## 目录
 

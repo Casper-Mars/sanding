@@ -22,6 +22,7 @@
 - 内部网络 `sanding`：容器间可用服务名互访（如 `echuan:8720`）。
 - 两个 agent 的 `cordis.patch.yml` 目前仍走宿主地址 `http://host.docker.internal:8721`。
 - 启动顺序：两个 agent `depends_on` 等 `echuan` healthy。
+- Web 控制面（`dsh-web-control`）**不在本 compose 内**，是宿主上独立进程，见第 6 节。
 - 浏览器访问方式（`TOKEN` 即 `.env` 的 `BROWSERLESS_TOKEN`）：
   - agent 容器内：`ws://host.docker.internal:3001?token=<TOKEN>`（不能写 127.0.0.1）
   - 宿主本机：`ws://127.0.0.1:3001?token=<TOKEN>`
@@ -37,6 +38,8 @@
 
 `browserless` 不需要本地源码，也不构建镜像，只需能拉取 `ghcr.io/browserless/chromium`
 （首次 `up` 会拉取；网络受限时先配 daemon 镜像加速或宿主代理）。
+
+可选：Web 控制面源码 `../dsh-web-control`（仅开发态起控制面时需要，不参与 compose）。
 
 ## 3. 配置
 
@@ -100,7 +103,41 @@ COMPOSE_PROJECT_NAME=sanding docker compose -f ../../echuan_v2/docker-compose.ym
 # 或直接用本目录：docker compose ps / docker compose exec echuan ...
 ```
 
-## 6. 与原部署方式的差异
+## 6. Web 控制面（可选，开发态）
+
+`dsh-web-control` 把 cto / pm / dev 三个 Agent 收进同一个 Web UI：侧栏是「实例 → 工作区 → 会话」树，
+对话区复用官方 dsh UI。它**不是 compose 服务**——是宿主上独立起的进程，通过宿主回环端口连各 Agent，
+同一浏览器连接、多实例路由。
+
+职责红线：控制面只做接入、路由、呈现、审计；任务编排、重试、验收归驿传，不在这里实现。
+
+前提：三个 Agent 已按第 4 节起来，宿主端口 `8090` / `8093` / `8091` 可达。
+
+```bash
+cd ~/project/opc/dsh-web-control
+make control-plane                 # 默认 http://<本机局域网 IP>:3095/，首次会构建
+SKIP_BUILD=1 make control-plane    # 跳过构建，直接用现有产物
+PORT=3100 make control-plane       # 换端口
+HOST=127.0.0.1 make control-plane  # 只绑回环（仅本机可访问）
+```
+
+实例清单在 `control-plane/control-plane.json`，与 `deployment/.env` 的端口一一对应：
+
+| 实例 id | 名称 | 地址 | 对应 compose 服务 |
+| --- | --- | --- | --- |
+| `dsh-worker-cto` | 技术总监 | `127.0.0.1:8090` | `cto-agent` |
+| `dsh-worker-pm` | 产品经理 | `127.0.0.1:8093` | `pm-agent` |
+| `dsh-worker-dev` | 开发团队 | `127.0.0.1:8091` | `dev-agent` |
+
+注意事项：
+
+- 启动日志会打印带 `?token=` 的 URL，必须带 token 打开；不带 token 是 401。
+- `--host` 只接受本机网卡的具体 IPv4/IPv6 字面量，`0.0.0.0` 会被拒绝（绑定全部网卡等于把 RCE 暴露到网络）。
+- 明文 HTTP，仅限可信局域网；用主机名（如 `xxx.local`）访问要加 `TRUSTED_HOST=xxx.local`，
+  否则 `/api` 的 Host 防护会拒绝。
+- 开发预览（基于 dsh 0.2.2-rc.1），暂未进 compose，没有健康检查与开机自启。
+
+## 7. 与原部署方式的差异
 
 | 项 | 原来 | 现在 |
 | --- | --- | --- |
@@ -124,8 +161,9 @@ cd ~/project/opc/sanding/agents/dsh-agent-dev/examples && docker compose up -d
 
 （旧 `dsh-home` 目录未删，回滚后状态与切换前一致。）
 
-## 7. 排障
+## 8. 排障
 
+- 控制面里某个实例连不上：先 `curl http://127.0.0.1:<端口>/` 确认该 Agent 宿主端口通，再看 `docker compose logs <服务>`；实例 id / 端口与 `control-plane/control-plane.json` 不一致也会连不上。
 - `worker 'base'/'dev' 未注册`：看对应 agent 日志里的 `[dsh-echuan]` 行；多半是 `cordis.patch.yml` 的 `baseUrl` 或 `worker.poll.enable` 不对，或平台没起。
 - agent 里访问平台 502：代理变量没排除 `host.docker.internal`。compose 已把大小写 `NO_PROXY` 成对覆盖，若自行加变量要保持成对。
 - `dsh: skipping profile bundle ...`：profile 里残留了本容器没挂载的插件，删掉 `dsh-home-*/profiles/web/package.json` 中对应的 `dsh.profile.bundles` 与 `dependencies` 条目后重启。
