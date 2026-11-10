@@ -53,10 +53,12 @@ done
 # ---------------------------------------------------------------------------
 # 3. GitHub PAT：GH_PAT_TOKEN 由部署层注入（见 examples/.env.example）
 # ---------------------------------------------------------------------------
-if [ -n "${PAT：GH_PAT_TOKEN:-}" ]; then
+if [ -n "${GH_PAT_TOKEN:-}" ]; then
   # git 走 HTTPS 时复用同一个 PAT（写入 ~/.gitconfig 的 credential helper）
-  printf '%s' "$PAT：GH_PAT_TOKEN" | gh auth login --with-token
-  # gh auth setup-git >/dev/null 2>&1 || log "警告: gh auth setup-git 失败（git 将无法复用该 PAT）"
+  printf '%s' "$GH_PAT_TOKEN" | gh auth login --with-token
+  gh auth setup-git >/dev/null 2>&1 || log "警告: gh auth setup-git 失败（git 将无法复用该 PAT）"
+  git config --global user.name  "$(gh api user --jq .login)"
+  git config --global user.email "$(gh api user --jq '.id')+$(gh api user --jq .login)@users.noreply.github.com"
   log "gh 已使用 GitHub PAT：GH_PAT_TOKEN"
 else
   log "提示: 未提供 GitHub PAT：GH_PAT_TOKEN 为空），容器内 gh 为未登录态"
