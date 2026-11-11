@@ -72,7 +72,7 @@ x-agent-env: &agent-env
 services:
   # ── 驿传平台 ──────────────────────────────────────────────────────────────
   echuan:
-    image: ${ECHUAN_IMAGE:-echuan-v2:local}
+    image: ${ECHUAN_IMAGE:-echuan:local}
     build:
       context: ${ECHUAN_SRC:-../../echuan_v2}
       dockerfile: Dockerfile
