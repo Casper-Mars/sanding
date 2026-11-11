@@ -95,7 +95,7 @@ services:
         https_proxy: ${DOCKER_BUILD_HTTPS_PROXY:-}
         ALL_PROXY: ${DOCKER_BUILD_ALL_PROXY:-}
         all_proxy: ${DOCKER_BUILD_ALL_PROXY:-}
-    container_name: ${ECHUAN_CONTAINER_NAME:-echuan-v2}
+    container_name: ${ECHUAN_CONTAINER_NAME:-echuan}
     restart: unless-stopped
 
     # 宿主 8721 → 容器 8720（容器内监听地址固定，端口隔离只在部署层做）
