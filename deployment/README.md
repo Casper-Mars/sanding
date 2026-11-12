@@ -16,6 +16,7 @@
 | `cto-agent` | `dsh-agent-cto` | `dsh-agent-base:local` | `127.0.0.1:8090` → 3080 | CTO Agent：requirement / design / breakdown |
 | `pm-agent` | `dsh-agent-pm` | `dsh-agent-base:local` | `127.0.0.1:8093` → 3080 | 产品经理 Agent：需求 / 方案 / 拆解 |
 | `dev-agent` | `dsh-agent-dev` | `dsh-agent-dev:local` | `127.0.0.1:8091` → 3080 | 开发 Agent：dev（含 docker / devcontainer 能力） |
+| `dsh-control-plane` | `dsh-control-plane` | `dsh-control-plane:local` | 无（仅容器内 3080） | Web 控制面：多 Agent 统一 UI，实例表挂载 |
 | `browserless` | `browserless` | `ghcr.io/browserless/chromium:latest` | `127.0.0.1:3001` → 3000 | 无头 Chromium：CDP / HTTP 供 agent 调用 |
 
 - compose 项目名：`sanding`；容器名保持旧名，兼容既有脚本与宿主工具。
@@ -103,39 +104,51 @@ COMPOSE_PROJECT_NAME=sanding docker compose -f ../../echuan_v2/docker-compose.ym
 # 或直接用本目录：docker compose ps / docker compose exec echuan ...
 ```
 
-## 6. Web 控制面（可选，开发态）
+## 6. Web 控制面（`dsh-control-plane`）
 
-`dsh-web-control` 把 cto / pm / dev 三个 Agent 收进同一个 Web UI：侧栏是「实例 → 工作区 → 会话」树，
-对话区复用官方 dsh UI。它**不是 compose 服务**——是宿主上独立起的进程，通过宿主回环端口连各 Agent，
-同一浏览器连接、多实例路由。
+把 cto / pm / dev 三个 Agent 收进同一个 Web UI：侧栏是「实例 → 工作区 → 会话」树，对话区复用官方 dsh UI。
+镜像复用官方 dsh CLI + 本仓库构建的 control-plane bundle（CLI 未改动），镜像名 `dsh-control-plane:local`（约 780MB）。
 
-职责红线：控制面只做接入、路由、呈现、审计；任务编排、重试、验收归驿传，不在这里实现。
+职责红线：控制面只做接入、路由、呈现、审计；任务编排、重试、验收归驿传。
 
-前提：三个 Agent 已按第 4 节起来，宿主端口 `8090` / `8093` / `8091` 可达。
+### 6.1 服务定义
 
-```bash
-cd ~/project/opc/dsh-web-control
-make control-plane                 # 默认 http://<本机局域网 IP>:3095/，首次会构建
-SKIP_BUILD=1 make control-plane    # 跳过构建，直接用现有产物
-PORT=3100 make control-plane       # 换端口
-HOST=127.0.0.1 make control-plane  # 只绑回环（仅本机可访问）
-```
+- 容器内只监听 `127.0.0.1:3080`（dsh 拒绝通配地址），因此**不 publish 3080**；宿主 `<ip>:3095` 打不进来是预期行为
+- 实例表通过只读挂载注入：`./control-plane/control-plane.json` → `/etc/dsh/control-plane.json`
+- `DSH_HOME` 挂在 `./data/dsh-home-cp`
+- 对外入口（手机/远程）由接入方案提供：容器内起 `dsh-relay` 监听 `0.0.0.0:3443`，再 publish 3443
 
-实例清单在 `control-plane/control-plane.json`，与 `deployment/.env` 的端口一一对应：
+### 6.2 实例表
+
+`control-plane/control-plane.json`，用 compose 服务名寻址（容器间走 `sanding` 网络）：
 
 | 实例 id | 名称 | 地址 | 对应 compose 服务 |
 | --- | --- | --- | --- |
-| `dsh-worker-cto` | 技术总监 | `127.0.0.1:8090` | `cto-agent` |
-| `dsh-worker-pm` | 产品经理 | `127.0.0.1:8093` | `pm-agent` |
-| `dsh-worker-dev` | 开发团队 | `127.0.0.1:8091` | `dev-agent` |
+| `dsh-worker-cto` | 技术总监 | `cto-agent:3080` | `cto-agent` |
+| `dsh-worker-dev` | 开发团队 | `dev-agent:3080` | `dev-agent` |
+| `dsh-worker-pm` | 产品经理 | `pm-agent:3080` | `pm-agent` |
 
-注意事项：
+改完实例表需要重建容器才生效（插件配置不热更新）：
 
-- 启动日志会打印带 `?token=` 的 URL，必须带 token 打开；不带 token 是 401。
-- `--host` 只接受本机网卡的具体 IPv4/IPv6 字面量，`0.0.0.0` 会被拒绝（绑定全部网卡等于把 RCE 暴露到网络）。
-- 明文 HTTP，仅限可信局域网；用主机名（如 `xxx.local`）访问要加 `TRUSTED_HOST=xxx.local`，
-  否则 `/api` 的 Host 防护会拒绝。
-- 开发预览（基于 dsh 0.2.2-rc.1），暂未进 compose，没有健康检查与开机自启。
+```bash
+docker compose up -d --no-build --force-recreate dsh-control-plane
+```
+
+### 6.3 常用命令
+
+```bash
+docker compose up -d --build dsh-control-plane      # 首次/改代码后构建
+docker compose logs -f --tail=100 dsh-control-plane
+docker compose ps dsh-control-plane                  # 期望 healthy
+docker exec dsh-control-plane curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:3080/   # 401 = 正常
+```
+
+### 6.4 注意
+
+- 启动日志会打印带 `?token=` 的 URL，不带 token 是 401
+- 构建参数 `DSH_CLIENT_COMMIT_HASH` 默认 `0000000`，需要真实 commit 时在 `.env` 设 `DSH_CONTROL_PLANE_COMMIT`
+- 构建期用公共 npm 源（`DSH_CONTROL_PLANE_NPM_REGISTRY`），不继承宿主 `.env` 里指向本地 verdaccio 的 `NPM_REGISTRY`
+- 镜像默认用 `Dockerfile.slim`（裁掉 codex / claude-sdk / libreoffice-wasm 等后端）；需要完整能力可设 `DSH_CONTROL_PLANE_DOCKERFILE=Dockerfile`
 
 ## 7. 与原部署方式的差异
 

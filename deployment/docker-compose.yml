@@ -1,11 +1,12 @@
 # 三鼎（sanding）交付系统 —— 统一部署编排
 #
-# 五个服务，对应架构文档 v3.5 的执行单元 + 一个共享浏览器：
+# 六个服务，对应架构文档 v3.5 的执行单元 + 一个共享浏览器 + 一个 Web 控制面：
 #   echuan      驿传平台（协调面）：需求 / 方案 / 任务 / 交付 / 待办 / 审计
 #   cto-agent   CTO Agent：dsh-agent-base 镜像 + dsh-agent-cto 插件组
 #   dev-agent   开发 Agent：dsh + dsh-agent-dev + dsh-echuan（含 docker / devcontainer）
 #   pm-agent    产品经理 Agent：同一个 dsh-agent-base 镜像 + dsh-agent-pm 插件组
 #   browserless 无头 Chromium：供 agent / 客户端经 CDP(WS) 或 HTTP 调用
+#   dsh-control-plane  Web 控制面：把三个 Agent 收进同一个 UI（实例表挂载注入）
 #
 # 浏览器说明：0.2.0 起直接使用官方镜像 ghcr.io/browserless/chromium，
 # 不再自建带 stagehand extension 的镜像（扩展已弃用，无需 --load-extension）。
@@ -109,6 +110,12 @@ services:
       TZ: ${TZ:-Asia/Shanghai}
       # 留空时配置文件生效；非空时覆盖 TOML（ECHUAN_* 优先级最高）
       ECHUAN_LOG_LEVEL: ${ECHUAN_LOG_LEVEL:-}
+      # 飞书机器人（可选模块）。enabled=false 时平台行为与接入前完全一致。
+      ECHUAN_IM_ENABLED: ${ECHUAN_IM_ENABLED:-false}
+      ECHUAN_IM_APP_ID: ${ECHUAN_IM_APP_ID:-}
+      ECHUAN_IM_APP_SECRET: ${ECHUAN_IM_APP_SECRET:-}
+      ECHUAN_IM_CHAT_IDS: ${ECHUAN_IM_CHAT_IDS:-}
+      ECHUAN_IM_DOC_FOLDER: ${ECHUAN_IM_DOC_FOLDER:-}
 
     volumes:
       # 数据库 / objects / workspaces 全部落在宿主机目录，删容器不丢数据
@@ -321,6 +328,53 @@ services:
       - sanding
     logging: *default-logging
     healthcheck: *agent-healthcheck
+
+  # ── Web 控制面 ────────────────────────────────────────────────────────────
+  # 复用官方 dsh CLI + 本仓库构建的 control-plane bundle（不改 CLI）。
+  # 容器内只监听 127.0.0.1:3080；宿主端口仅绑回环，对外入口由接入方案（relay / xEdge）负责。
+  # 实例表只读挂载：改完 control-plane/control-plane.json 后 docker compose up -d 生效。
+  dsh-control-plane:
+    image: ${DSH_CONTROL_PLANE_IMAGE:-dsh-control-plane:local}
+    build:
+      context: ${DSH_CONTROL_PLANE_SRC:-../../dsh-web-control}
+      dockerfile: ${DSH_CONTROL_PLANE_DOCKERFILE:-Dockerfile.slim}
+      args:
+        DSH_CLIENT_COMMIT_HASH: ${DSH_CONTROL_PLANE_COMMIT:-0000000}
+        # 构建期用公共源：宿主 .env 的 NPM_REGISTRY 指向本地 verdaccio，构建容器不一定能访问
+        NPM_REGISTRY: ${DSH_CONTROL_PLANE_NPM_REGISTRY:-https://registry.npmmirror.com}
+    container_name: ${DSH_CONTROL_PLANE_CONTAINER_NAME:-dsh-control-plane}
+    restart: unless-stopped
+    depends_on:
+      - cto-agent
+      - dev-agent
+      - pm-agent
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    # 不发布 3080：dsh 只绑容器内 127.0.0.1（拒绝通配地址），publish 到宿主打不进来。
+    # 对外入口由接入方案负责（dsh-relay 在容器内监听 0.0.0.0:3443，再 publish 3443）。
+    volumes:
+      # dsh home：profile / 会话 / 凭据 / 日志
+      - "${DSH_CONTROL_PLANE_HOME_DIR:-./data/dsh-home-cp}:/home/node/.dsh"
+      # 实例表：容器间用服务名寻址
+      - "./control-plane/control-plane.json:/etc/dsh/control-plane.json:ro"
+    environment:
+      TZ: ${TZ:-Asia/Shanghai}
+      # 容器间直连，不能过代理
+      NO_PROXY: localhost,127.0.0.1,::1,host.docker.internal,cto-agent,dev-agent,pm-agent
+      no_proxy: localhost,127.0.0.1,::1,host.docker.internal,cto-agent,dev-agent,pm-agent
+    networks:
+      - sanding
+    logging: *default-logging
+    healthcheck:
+      # 无 token 访问返回 401，属于「健康」；只校验端口有 HTTP 应答
+      test:
+        - CMD-SHELL
+        - >-
+          curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3080/ | grep -qE '^(200|302|303|401)$'
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
 
 networks:
   sanding:

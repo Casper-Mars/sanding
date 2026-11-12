@@ -1,0 +1,8 @@
+{
+  "listen": { "host": "127.0.0.1", "port": 3080 },
+  "instances": [
+    { "id": "dsh-worker-cto", "name": "技术总监", "host": "cto-agent", "port": 3080 },
+    { "id": "dsh-worker-dev", "name": "开发团队", "host": "dev-agent", "port": 3080 },
+    { "id": "dsh-worker-pm",  "name": "产品经理", "host": "pm-agent",  "port": 3080 }
+  ]
+}
