@@ -206,6 +206,8 @@ services:
     depends_on:
       echuan:
         condition: service_healthy
+      browserless:
+        condition: service_healthy
     # 让容器用 host.docker.internal 访问宿主服务（驿传平台）
     extra_hosts:
       - "host.docker.internal:host-gateway"
