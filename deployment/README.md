@@ -113,10 +113,10 @@ COMPOSE_PROJECT_NAME=sanding docker compose -f ../../echuan_v2/docker-compose.ym
 
 ### 6.1 服务定义
 
-- 容器内只监听 `127.0.0.1:3080`（dsh 拒绝通配地址），因此**不 publish 3080**；宿主 `<ip>:3095` 打不进来是预期行为
+- 容器内绑 **eth0 的具体 IP**（`DSH_BIND_HOST=auto`，dsh 拒绝通配地址但接受具体 IP），发布 `127.0.0.1:3095` → 宿主可直接访问
 - 实例表通过只读挂载注入：`./control-plane/control-plane.json` → `/etc/dsh/control-plane.json`
 - `DSH_HOME` 挂在 `./data/dsh-home-cp`
-- 对外入口（手机/远程）由接入方案提供：容器内起 `dsh-relay` 监听 `0.0.0.0:3443`，再 publish 3443
+- 对外入口（手机/远程）：若要上 `dsh-relay`，必须先把 `DSH_CONTROL_PLANE_BIND=loopback`（relay 拒绝 harness 绑在网络地址上），改为发布 relay 的 3443
 
 ### 6.2 实例表
 
@@ -140,7 +140,8 @@ docker compose up -d --no-build --force-recreate dsh-control-plane
 docker compose up -d --build dsh-control-plane      # 首次/改代码后构建
 docker compose logs -f --tail=100 dsh-control-plane
 docker compose ps dsh-control-plane                  # 期望 healthy
-docker exec dsh-control-plane curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:3080/   # 401 = 正常
+curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:3095/    # 401 = 正常（缺 token）
+# 带 token 访问：从 docker compose logs 里取 ?token=... 的完整 URL，浏览器打开
 ```
 
 ### 6.4 注意

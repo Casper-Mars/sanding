@@ -350,8 +350,11 @@ services:
       - pm-agent
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    # 不发布 3080：dsh 只绑容器内 127.0.0.1（拒绝通配地址），publish 到宿主打不进来。
-    # 对外入口由接入方案负责（dsh-relay 在容器内监听 0.0.0.0:3443，再 publish 3443）。
+    # 绑容器 eth0 的具体 IP（DSH_BIND_HOST=auto），因此 publish 3080 可在宿主访问。
+    # 注意：绑网络地址后不能再在同容器里起 dsh-relay（relay 会拒绝）；
+    #       届时把 DSH_BIND_HOST 改成 loopback，并改为发布 relay 的 3443。
+    ports:
+      - "127.0.0.1:${DSH_CONTROL_PLANE_PORT:-3095}:3080"
     volumes:
       # dsh home：profile / 会话 / 凭据 / 日志
       - "${DSH_CONTROL_PLANE_HOME_DIR:-./data/dsh-home-cp}:/home/node/.dsh"
@@ -359,6 +362,8 @@ services:
       - "./control-plane/control-plane.json:/etc/dsh/control-plane.json:ro"
     environment:
       TZ: ${TZ:-Asia/Shanghai}
+      # auto = 绑容器 eth0 IP（可 publish）；loopback = 供 relay 前置
+      DSH_BIND_HOST: ${DSH_CONTROL_PLANE_BIND:-auto}
       # 容器间直连，不能过代理
       NO_PROXY: localhost,127.0.0.1,::1,host.docker.internal,cto-agent,dev-agent,pm-agent
       no_proxy: localhost,127.0.0.1,::1,host.docker.internal,cto-agent,dev-agent,pm-agent
