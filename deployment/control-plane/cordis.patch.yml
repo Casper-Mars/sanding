@@ -1,0 +1,10 @@
+# 控制面 profile 的额外 patch 层（挂载注入，不改镜像）
+# dsh-relay：在 harness 旁起 HTTPS 监听器，提供密码 / 二维码配对 / 设备令牌
+- insert:
+    - id: relay
+      name: dsh-relay
+      config:
+        # relay 状态目录（证书、密钥、已配对设备）落在卷里，重建容器不丢
+        stateDir: /home/node/.dsh/relay
+        bind: '0.0.0.0'
+        port: 3443

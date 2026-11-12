@@ -113,10 +113,11 @@ COMPOSE_PROJECT_NAME=sanding docker compose -f ../../echuan_v2/docker-compose.ym
 
 ### 6.1 服务定义
 
-- 容器内绑 **eth0 的具体 IP**（`DSH_BIND_HOST=auto`，dsh 拒绝通配地址但接受具体 IP），发布 `127.0.0.1:3095` → 宿主可直接访问
+- harness 只绑 **loopback**（`DSH_BIND_HOST=loopback`），对外入口是 **dsh-relay 的 3443**（容器内 `0.0.0.0:3443` → 发布 `127.0.0.1:3443`）
+- relay 由 `control-plane/cordis.patch.yml` 挂载启用，插件装在 `DSH_HOME` 卷里（`dsh plugin add dsh-relay`），重建容器不丢
 - 实例表通过只读挂载注入：`./control-plane/control-plane.json` → `/etc/dsh/control-plane.json`
 - `DSH_HOME` 挂在 `./data/dsh-home-cp`
-- 对外入口（手机/远程）：若要上 `dsh-relay`，必须先把 `DSH_CONTROL_PLANE_BIND=loopback`（relay 拒绝 harness 绑在网络地址上），改为发布 relay 的 3443
+- 配对与设备令牌落在 `/home/node/.dsh/relay`（卷内），证书自签、指纹在配对页
 
 ### 6.2 实例表
 

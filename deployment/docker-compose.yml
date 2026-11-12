@@ -350,20 +350,21 @@ services:
       - pm-agent
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    # 绑容器 eth0 的具体 IP（DSH_BIND_HOST=auto），因此 publish 3080 可在宿主访问。
-    # 注意：绑网络地址后不能再在同容器里起 dsh-relay（relay 会拒绝）；
-    #       届时把 DSH_BIND_HOST 改成 loopback，并改为发布 relay 的 3443。
+    # harness 只绑 loopback（relay 要求），对外入口是 relay 的 3443。
+    # 要临时在本机直连 harness，可把 DSH_CONTROL_PLANE_BIND 改为 auto 并加 3095:3080 发布。
     ports:
-      - "127.0.0.1:${DSH_CONTROL_PLANE_PORT:-3095}:3080"
+      - "127.0.0.1:${DSH_CONTROL_PLANE_RELAY_PORT:-3443}:3443"
     volumes:
       # dsh home：profile / 会话 / 凭据 / 日志
       - "${DSH_CONTROL_PLANE_HOME_DIR:-./data/dsh-home-cp}:/home/node/.dsh"
       # 实例表：容器间用服务名寻址
       - "./control-plane/control-plane.json:/etc/dsh/control-plane.json:ro"
+      # relay 插件挂载：profile patch 层
+      - "./control-plane/cordis.patch.yml:/home/node/.dsh/profiles/web/cordis.patch.yml:ro"
     environment:
       TZ: ${TZ:-Asia/Shanghai}
       # auto = 绑容器 eth0 IP（可 publish）；loopback = 供 relay 前置
-      DSH_BIND_HOST: ${DSH_CONTROL_PLANE_BIND:-auto}
+      DSH_BIND_HOST: ${DSH_CONTROL_PLANE_BIND:-loopback}
       # 容器间直连，不能过代理
       NO_PROXY: localhost,127.0.0.1,::1,host.docker.internal,cto-agent,dev-agent,pm-agent
       no_proxy: localhost,127.0.0.1,::1,host.docker.internal,cto-agent,dev-agent,pm-agent
