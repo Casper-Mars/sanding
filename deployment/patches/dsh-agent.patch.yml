@@ -48,3 +48,20 @@
   config:
     cdpUrl: "ws://host.docker.internal:3000/?token=test-token"
     headless: false
+
+# dsh-relay：bundle 层（包自带）已 insert id=relay，这里只做 config 覆盖。
+# 注意：profile patch 覆盖该行会整体替换 config，需要的字段必须重述。
+# harness 由 DSH_BIND_HOST=loopback 绑回环，relay 在 0.0.0.0:3443 上对外，
+# 所有外部访问都要过 TLS + 密码 / 设备配对。
+- id: relay
+  config:
+    # 状态目录（证书、密钥、已配对设备）落在卷里，重建容器不丢
+    stateDir: !!js dshHomePath('relay')
+    bind: '0.0.0.0'
+    port: 3443
+    tls: self-signed
+    publicHostnames: []
+    compat:
+      addressGrants: true
+      addressGrantTtlMs: 86400000
+      plainPort: 0

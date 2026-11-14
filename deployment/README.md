@@ -16,8 +16,8 @@
 | `cto-agent` | `dsh-agent-cto` | `dsh-agent-base:local` | `127.0.0.1:8090` → 3080 | ~~CTO Agent（V2）~~ **已停止**，被 `dsh-agent` 取代，保留定义仅供回退 |
 | `pm-agent` | `dsh-agent-pm` | `dsh-agent-base:local` | `127.0.0.1:8093` → 3080 | ~~产品经理 Agent（V2）~~ **已停止**，同上 |
 | `dev-agent` | `dsh-agent-dev` | `dsh-agent-dev:local` | `127.0.0.1:8091` → 3080 | ~~开发 Agent（V2）~~ **已停止**，同上 |
-| `dsh-agent` | `dsh-agent` | `dsh-agent-dev:local` | `127.0.0.1:8095` → 3080 | **合并 Host（V3）**：cto + pm + dev 三个角色包同 profile，五个 preset |
-| `dsh-portal` | `dsh-portal` | `caddy:2-alpine` | `127.0.0.1:8080` → 80 | 统一入口：整体反代 `dsh-agent` 的官方 UI |
+| `dsh-agent` | `dsh-agent` | `dsh-agent-dev:local` | `3443`（TLS，relay） | **合并 Host（V3）**：cto + pm + dev 三个角色包同 profile + `dsh-relay` 对外 |
+| `dsh-agent` 内置 `dsh-relay` | — | （同镜像，运行期装插件） | `3443`（TLS） | **唯一对外入口**：TLS + 密码 + 设备配对，harness 本身只绑回环 |
 | `dsh-control-plane` | `dsh-control-plane` | `dsh-control-plane:local` | 无（仅容器内 3080） | Web 控制面（实验，已冻结）：多 Agent 统一 UI |
 | `browserless` | `browserless` | `ghcr.io/browserless/chromium:latest` | `127.0.0.1:3001` → 3000 | 无头 Chromium：CDP / HTTP 供 agent 调用 |
 
@@ -25,7 +25,7 @@
 - 内部网络 `sanding`：容器间可用服务名互访（如 `echuan:8720`）。
 - 两个 agent 的 `cordis.patch.yml` 目前仍走宿主地址 `http://host.docker.internal:8721`。
 - 启动顺序：两个 agent `depends_on` 等 `echuan` healthy。
-- Web 控制面（`dsh-web-control`）在多 Agent 场景下已改由 `dsh-portal` 承担（见第 6 节），控制面服务保留仅供对比。
+- 对外入口只有 `dsh-relay`（见第 6 节）；`dsh-portal`（Caddy）已删除——它没有认证，且 relay 能直接干这件事。
 - `dsh-agent` 是 V3 的唯一运行形态：三个角色包装进同一个 profile，技能在各自 preset 层、
   persona 按 preset id 门控；派单由平台下发 `agent_preset`，kit 按 `项目号:preset` 建会话。
   旧三台（`cto-agent` / `pm-agent` / `dev-agent`）**已于 2026-11-15 停掉**——它们仍会向同一个
@@ -124,20 +124,36 @@ echuan 的容器配置**归部署侧所有**：`deployment/echuan/echuan.contain
 仍在跨仓库的只剩构建上下文（`ECHUAN_SRC=../../echuan_v2`，从源码构建镜像），那是「代码从哪来」，
 不属于配置耦合；若想彻底解耦，可改为直接用已构建好的镜像（`ECHUAN_IMAGE`）并去掉 `build`。
 
-## 6. 统一入口（`dsh-portal`）
+## 6. 对外入口（`dsh-relay`）
 
-合并成一个 Host 之后，入口也只剩一个：Caddy 把 `127.0.0.1:8080` 整体反代到 `dsh-agent:3080`，
-官方 dsh web 零改动。
+合并成一个 Host 之后，入口不是反代，而是 Host 自己装的 **`dsh-relay`**：
 
-| 入口 | 反代目标 |
-| --- | --- |
-| `http://127.0.0.1:8080` | `dsh-agent:3080`（官方 UI） |
+```
+手机 / 浏览器 ──TLS──▶ dsh-agent:3443（relay）──HTTP──▶ 127.0.0.1:3080（harness）
+                         ├─ /relay/login     密码登录
+                         ├─ /relay/password  设密码（只接受本机）
+                         ├─ /relay/pair      QR / 8 位码配对设备
+                         └─ /relay/devices   逐设备吊销
+```
 
-- **不要改成路径前缀**（`/agent/`）：dsh web 的资源与 API 都是绝对路径，前缀会踩坑。
-- 旧的多子域形态（`cto.localhost` / `dev.localhost` / `pm.localhost`）随三台 Host 一起下线；
-  需要并存时在 `Caddyfile` 里按 host matcher 加回来即可，规则见 git 历史。
-- Docker Desktop 会把宿主代理注入容器：`dsh-portal` 必须配 `NO_PROXY` 含 `dsh-agent`，
-  否则反代会把内部请求交给代理，返回 502。
+- **harness 只绑回环**：`DSH_BIND_HOST=loopback`（入口脚本里映射成 `dsh web --host 127.0.0.1`）。
+  relay 发现 webserver 已监听网络地址会**拒绝启动**，所以「relay 挂了」的结果是连不上，
+  而不是裸奔在网络上——这是选它而不是 Caddy 的核心理由。
+- 端口发布：`${DSH_RELAY_BIND:-0.0.0.0}:${DSH_RELAY_PORT:-3443}:3443`。默认绑 `0.0.0.0`
+  是为了手机能连；只想本机用时把 `DSH_RELAY_BIND` 改成 `127.0.0.1`。
+- **设密码**：relay 只接受「运行 harness 的那台机器」设密码，容器化之后就是容器本身：
+
+  ```bash
+  ./scripts/relay-password.sh            # 读 .env 的 DSH_RELAY_PASSWORD
+  ./scripts/relay-password.sh 'xxxxxxx'  # 或显式传入（≥10 字符）
+  ```
+
+- 配对手机：在**运行容器的这台机器**上打开 `https://127.0.0.1:3443/relay/pair`（自签证书需要点
+  「继续」），用手机扫码或输入 8 位码；每个设备独立 token，可在 `/relay/devices` 单独吊销。
+- 自签证书：`tls: self-signed`，证书与已配对设备都在卷里的 `~/.dsh/relay/`，重建容器不丢。
+  正式对外（公网）时应换真证书，并把 `compat.addressGrants` 关掉，见插件文档。
+- **不要**在 relay 前面再套 nginx / Caddy / Tailscale Serve：那些代理从回环连进来，
+  relay 会把它们当成「本机操作员」，等于免密。
 
 ### 6.1 控制面（已冻结）
 

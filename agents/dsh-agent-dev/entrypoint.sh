@@ -6,8 +6,14 @@
 #   2. 按 PLUGIN_SPECS 逐条 `dsh plugin add <name>@<version>` —— 镜像内不含插件；
 #   3. 有 GH_TOKEN 时 `gh auth setup-git`，让 git 的 HTTPS 凭据复用它。
 #
-# 启动：web 模式绑定容器 eth0 IP（`dsh web --host` 只接受具体地址、拒绝 0.0.0.0；
-# 只监听 127.0.0.1 时宿主端口映射访问不到）。其他模式原样透传。
+# 启动：web 模式的绑定地址由 DSH_BIND_HOST 决定（`dsh web --host` 只接受具体地址、
+# 拒绝 0.0.0.0）：
+#   auto（默认）  = 容器 eth0 IP，宿主端口映射能直接访问 harness；
+#   loopback      = 127.0.0.1，harness 不出回环，由 dsh-relay 在 0.0.0.0:3443 上
+#                   加 TLS / 密码 / 设备配对对外——relay 发现 webserver 已监听网络
+#                   地址时会拒绝启动，所以两者互斥；
+#   其他值        = 原样作为 --host。
+# 其他模式原样透传。
 #
 # 以 root 运行 dsh（不降权）：宿主 docker.sock 是 root:root 660，非 root 无法指挥
 # daemon；同时免除 /home/node/.dsh 与 /workspace 的写权限问题。
@@ -96,9 +102,16 @@ fi
 # ---------------------------------------------------------------------------
 if [ "$1" = "web" ]; then
   shift
-  IP="$(hostname -i 2>/dev/null | awk '{print $1}')"
-  [ -n "$IP" ] && exec dsh web --host "$IP" --no-open "$@"
-  exec dsh web --no-open "$@"
+  BIND="${DSH_BIND_HOST:-auto}"
+  case "$BIND" in
+    loopback) BIND="127.0.0.1" ;;
+    auto|"")
+      BIND="$(hostname -i 2>/dev/null | awk '{print $1}')"
+      [ -n "$BIND" ] || exec dsh web --no-open "$@"
+      ;;
+  esac
+  log "web 模式：绑定 $BIND"
+  exec dsh web --host "$BIND" --no-open "$@"
 fi
 
 exec dsh "$@"

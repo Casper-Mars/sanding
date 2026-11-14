@@ -342,6 +342,14 @@ services:
   # 保留旧三台作为回退，验收通过后（任务-10）再删。
   dsh-agent:
     image: ${DSH_MERGED_IMAGE:-dsh-agent-dev:local}
+    build:
+      context: ${DSH_DEV_SRC:-../agents/dsh-agent-dev}
+      dockerfile: Dockerfile
+      args:
+        NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmmirror.com}
+        DSH_VERSION: ${DSH_VERSION:-0.2.1-rc.2}
+        GH_VERSION: ${GH_VERSION:-2.95.0}
+        GH_PROXY: ${DOCKER_PROXY:-}
     container_name: ${DSH_MERGED_CONTAINER_NAME:-dsh-agent}
     restart: unless-stopped
     depends_on:
@@ -352,8 +360,11 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:
-      # 与旧三台（8090/8091/8093）错开，便于并存回退
-      - "127.0.0.1:${DSH_MERGED_PORT:-8095}:3080"
+      # 只发布 relay 的端口：harness 本身绑回环（见 DSH_WEB_HOST），
+      # 所有外部访问都要过 relay 的 TLS + 密码/设备配对。
+      # 默认绑 0.0.0.0 是为了手机等局域网设备能连；只想本机用时改成
+      # "127.0.0.1:${DSH_RELAY_PORT:-3443}:3443"。
+      - "${DSH_RELAY_BIND:-0.0.0.0}:${DSH_RELAY_PORT:-3443}:3443"
     volumes:
       # dev 的角色需要指挥宿主 daemon（ADR-5：同进程特权，靠权限档位与红线约束）
       - "${DOCKER_SOCKET:-/var/run/docker.sock}:/var/run/docker.sock"
@@ -367,7 +378,10 @@ services:
     cap_add: *agent-cap
     environment:
       <<: *agent-env
-      PLUGIN_SPECS: ${DSH_MERGED_PLUGIN_SPECS:-dsh-agent-cto@0.5.2 dsh-agent-pm@0.5.0 dsh-agent-dev@0.7.0 dsh-echuan@0.2.2 dsh-agent-base@0.2.0 dsh-browser-native@0.1.0 dsh-local-admission@0.1.1}
+      PLUGIN_SPECS: ${DSH_MERGED_PLUGIN_SPECS:-dsh-agent-cto@0.5.2 dsh-agent-pm@0.5.0 dsh-agent-dev@0.7.0 dsh-echuan@0.2.2 dsh-agent-base@0.2.0 dsh-browser-native@0.1.0 dsh-local-admission@0.1.1 dsh-relay@0.4.0}
+      # harness 只监听回环，对外只暴露 dsh-relay（TLS + 密码 + 设备配对）
+      DSH_BIND_HOST: loopback
+      DSH_RELAY_PORT: "3443"
       # 大小写代理变量必须成对覆盖：插件 HTTP 客户端读小写变量，
       # 注入的宿主代理会把访问驿传平台的请求转走 → 502。
       HTTP_PROXY: ${DOCKER_PROXY:-}
@@ -379,41 +393,17 @@ services:
     networks:
       - sanding
     logging: *default-logging
-    healthcheck: *agent-healthcheck
+    # harness 绑回环后，原锚点（探容器 eth0 IP）会一直失败
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          node -e "require('http').get({host:'127.0.0.1',port:3080,path:'/'},r=>{r.resume();process.exit(0)}).on('error',()=>process.exit(1))"
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 90s
 
-  # ── 统一入口（官方 UI，零改造）────────────────────────────────────────────
-  # 三个子域各自反代到一台 Agent 的官方 dsh web；每个子域都是根路径，
-  # 不改写任何 /api 或 WebSocket 路径。门户页由同一端口的默认站点提供。
-  # 为什么不用路径前缀（/cto/）：dsh web 的资源与 API 都是绝对路径，前缀会踩坑。
-  dsh-portal:
-    image: ${DSH_PORTAL_IMAGE:-caddy:2-alpine}
-    container_name: ${DSH_PORTAL_CONTAINER_NAME:-dsh-portal}
-    restart: unless-stopped
-    depends_on:
-      - dsh-agent
-    ports:
-      # 只绑回环：本机入口，公网暴露仍交给隧道 / 反代
-      - "127.0.0.1:${DSH_PORTAL_PORT:-8080}:80"
-    volumes:
-      - "./Caddyfile:/etc/caddy/Caddyfile:ro"
-      - "./portal:/srv:ro"
-      - "${DSH_PORTAL_DATA_DIR:-./data/caddy}:/data"
-    environment:
-      TZ: ${TZ:-Asia/Shanghai}
-      # Docker Desktop 会把宿主机代理注入每个容器；不绕过就会把 cto-agent:3080
-      # 当成外网请求交给代理，回 502。内部服务一律直连。
-      NO_PROXY: localhost,127.0.0.1,::1,host.docker.internal,dsh-agent
-      no_proxy: localhost,127.0.0.1,::1,host.docker.internal,dsh-agent
-    networks:
-      - sanding
-    logging: *default-logging
-
-  # ── Web 控制面（实验，冻结在 2026-11-14）───────────────────────────────────
-  # 复用官方 dsh CLI + 本仓库构建的 control-plane bundle（不改 CLI）。
-  # 冻结说明：控制面靠 fork 官方 UI 换来多 Agent 聚合，上游升级要持续跟；
-  # 2026-11-14 起改走 dsh-portal（Caddy 子域 + 官方 UI），本服务仅保留供对比，不再迭代。
-  # 容器内只监听 127.0.0.1:3080；宿主端口仅绑回环，对外入口由接入方案（relay / xEdge）负责。
-  # 实例表只读挂载：改完 control-plane/control-plane.json 后 docker compose up -d 生效。
   dsh-control-plane:
     image: ${DSH_CONTROL_PLANE_IMAGE:-dsh-control-plane:local}
     build:

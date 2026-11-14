@@ -22,8 +22,9 @@ PW="${1:-$(read_env DSH_RELAY_PASSWORD)}"
 [ -n "$PW" ] || { echo "错误：未提供密码（.env 的 DSH_RELAY_PASSWORD，或第一个参数）" >&2; exit 1; }
 [ "${#PW}" -ge 10 ] || { echo "错误：relay 要求密码至少 10 个字符（当前 ${#PW}）" >&2; exit 1; }
 
-CN="$(read_env DSH_CONTROL_PLANE_CONTAINER_NAME)"
-CN="${CN:-dsh-control-plane}"
+# 默认目标是合并 Host（dsh-agent）；要改到别的 Host 用 RELAY_CONTAINER 覆盖
+CN="${RELAY_CONTAINER:-$(read_env DSH_MERGED_CONTAINER_NAME)}"
+CN="${CN:-dsh-agent}"
 
 code="$(docker compose exec -T "$CN" \
   curl -k -s -o /dev/null -w '%{http_code}' \

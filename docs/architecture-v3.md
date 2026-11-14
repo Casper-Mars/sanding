@@ -354,6 +354,10 @@ commit `2612578`（kit 0.3.1）。
 - `cto-agent` / `pm-agent` / `dev-agent` / `dsh-control-plane` 已 `docker compose stop`：
   旧 worker 仍向同一平台声明 kinds，不关会抢卡（实测 requirement 卡被旧 worker 领走）。
   compose 定义保留，回退用 `docker compose up -d cto-agent pm-agent dev-agent`。
-- `dsh-portal` 从「三子域分流 + 门户页」改为整体反代 `dsh-agent:3080`；
-  `NO_PROXY` 同步改为 `dsh-agent`，否则 Docker Desktop 注入的宿主代理会 502。
+- 入口最终不是反代而是 **`dsh-relay`（0.4.0）**：harness 改绑回环（`DSH_BIND_HOST=loopback`），
+  relay 在 `0.0.0.0:3443` 上加 TLS + 密码 + 设备配对后转发。选它而不是 Caddy 的理由：
+  relay 发现 webserver 已监听网络地址会拒绝启动，「挂掉」等于连不上，而不是裸奔。
+  `dsh-portal`（Caddy 反代，无认证）随之删除。
+- relay 状态（自签证书、已配对设备）落在 `~/.dsh/relay/`，随 `data/dsh-home-agent` 卷持久化；
+  密码用 `./scripts/relay-password.sh` 从容器内回环设置（relay 只认本机操作员）。
 - 平台镜像已重建（含 `agent_preset` 派单）；kit 0.3.1 已发布到本地 4873 并装进 `dsh-agent`。
