@@ -16,6 +16,7 @@
 | `cto-agent` | `dsh-agent-cto` | `dsh-agent-base:local` | `127.0.0.1:8090` → 3080 | CTO Agent：requirement / design / breakdown |
 | `pm-agent` | `dsh-agent-pm` | `dsh-agent-base:local` | `127.0.0.1:8093` → 3080 | 产品经理 Agent：需求 / 方案 / 拆解 |
 | `dev-agent` | `dsh-agent-dev` | `dsh-agent-dev:local` | `127.0.0.1:8091` → 3080 | 开发 Agent：dev（含 docker / devcontainer 能力） |
+| `dsh-agent` | `dsh-agent` | `dsh-agent-dev:local` | `127.0.0.1:8095` → 3080 | **合并 Host（V3）**：cto + pm + dev 三个角色包同 profile，五个 preset |
 | `dsh-portal` | `dsh-portal` | `caddy:2-alpine` | `127.0.0.1:8080` → 80 | 统一入口：三个子域各自反代一台官方 UI + 门户页 |
 | `dsh-control-plane` | `dsh-control-plane` | `dsh-control-plane:local` | 无（仅容器内 3080） | Web 控制面（实验，已冻结）：多 Agent 统一 UI |
 | `browserless` | `browserless` | `ghcr.io/browserless/chromium:latest` | `127.0.0.1:3001` → 3000 | 无头 Chromium：CDP / HTTP 供 agent 调用 |
@@ -25,6 +26,8 @@
 - 两个 agent 的 `cordis.patch.yml` 目前仍走宿主地址 `http://host.docker.internal:8721`。
 - 启动顺序：两个 agent `depends_on` 等 `echuan` healthy。
 - Web 控制面（`dsh-web-control`）在多 Agent 场景下已改由 `dsh-portal` 承担（见第 6 节），控制面服务保留仅供对比。
+- `dsh-agent` 是 V3 的目标形态，与旧三台并存：三个角色包装进同一个 profile，
+  技能在各自 preset 层、persona 按 preset id 门控；旧三台保留到收口（任务-10）。
 - 浏览器访问方式（`TOKEN` 即 `.env` 的 `BROWSERLESS_TOKEN`）：
   - agent 容器内：`ws://host.docker.internal:3001?token=<TOKEN>`（不能写 127.0.0.1）
   - 宿主本机：`ws://127.0.0.1:3001?token=<TOKEN>`
@@ -206,6 +209,34 @@ curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:3095/    # 401 = 正�
 - 构建参数 `DSH_CLIENT_COMMIT_HASH` 默认 `0000000`，需要真实 commit 时在 `.env` 设 `DSH_CONTROL_PLANE_COMMIT`
 - 构建期用公共 npm 源（`DSH_CONTROL_PLANE_NPM_REGISTRY`），不继承宿主 `.env` 里指向本地 verdaccio 的 `NPM_REGISTRY`
 - 镜像默认用 `Dockerfile.slim`（裁掉 codex / claude-sdk / libreoffice-wasm 等后端）；需要完整能力可设 `DSH_CONTROL_PLANE_DOCKERFILE=Dockerfile`
+
+## 7.1 合并 Host（`dsh-agent`）
+
+单 Host 多角色，三个角色包（`dsh-agent-cto` / `dsh-agent-pm` / `dsh-agent-dev`）装进同一个 profile。
+
+**必须做的一件事**：三个包各带一份 `agent-preset-registry` insert，加载器按 id 合并，
+最后一个 bundle 的 `default` 胜出（实测是 `pm`）。所以 `patches/dsh-agent.patch.yml` 里显式覆盖：
+
+```yaml
+- id: agent-preset-registry
+  config:
+    default: cto
+```
+
+`patches/dsh-agent.patch.yml` 同时声明 worker 承接全部 kind（requirement / design / breakdown / dev）——
+角色由平台侧的 `kind → preset` 映射决定，不再靠「一台 host 只声明一组 kind」隐式表达。
+
+**验收**（一条命令，容器内跑）：
+
+```bash
+docker compose exec dsh-agent node /opt/verify-presets.mjs --home /home/node/.dsh --profile web
+```
+
+断言：五个角色 preset（cto / pm / dev-leader / dev-developer / dev-tester）注册、默认 cto、
+宿主层只有基础设施技能、每个 preset 的技能清单与预期逐字一致、persona 不串味。
+基线 preset（standard / ptc / minimal / cordis）来自 `dsh-agent-base`，属正常。
+
+**回退**：旧三台仍在运行（8090/8091/8093）；`dsh-agent` 出问题直接 `docker compose stop dsh-agent`。
 
 ## 8. 与原部署方式的差异
 

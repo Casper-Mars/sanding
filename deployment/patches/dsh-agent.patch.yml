@@ -1,0 +1,43 @@
+# 合并 Host（dsh-agent）的部署补丁层（home patch）
+#
+# 挂载点：/home/node/.dsh/cordis.patch.yml（只读）
+# 层序：bundle 层（三个角色包各自的 patch）→ profiles/web/cordis.patch.yml → 本文件
+#
+# 三个角色包都带一份 `agent-preset-registry` insert，加载器按 id 合并，
+# **最后一个 bundle 的 default 会胜出**（实测是 pm）。主会话必须由 CTO 承载，
+# 所以这里显式覆盖一次。
+- id: agent-preset-registry
+  config:
+    default: cto
+
+- id: echuan
+  config:
+    baseUrl: http://host.docker.internal:8721 # 平台地址，结尾斜杠会被去掉
+    actor: agent_core:echuan # X-Actor 声明式身份，不是 worker_id
+    requestTimeoutMs: 35000 # 单请求超时
+    exclude: [] # 不注册的工具名；默认 [] = 全量 23 个
+    worker:
+      poll:
+        enable: true # 默认关闭；打开才会定时心跳
+      kinds:
+        # 合并 Host 承接全部任务类型；角色由平台侧的 kind → preset 映射决定
+        - requirement
+        - design
+        - breakdown
+        - dev
+      metadata:
+        # 原样上报，序列化后 ≤8KiB
+        host: build-01
+        os: darwin
+        agent_version: 1.0.0
+        name: core
+
+- id: ui-settings-general
+  name: "@deepseek-ai/dsh-client-ui-settings-general"
+  config:
+    welcomeNoticeVersion: 2026-09-28.1
+
+- id: dsh-browser-native
+  config:
+    cdpUrl: "ws://host.docker.internal:3000/?token=test-token"
+    headless: false

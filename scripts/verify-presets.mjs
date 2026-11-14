@@ -47,6 +47,12 @@ export const EXPECTED_DEFAULT = 'cto'
 /** 所有角色都该看到的共享技能。 */
 export const SHARED = ['dev-environment']
 
+/**
+ * 允许出现在宿主层的技能（基础设施插件自带，不属于任何角色）。
+ * 角色技能必须全部在 preset 层；宿主层只允许这里列出的。
+ */
+export const ALLOWED_GLOBAL_SKILLS = ['echuan-task-execution']
+
 /** 每个 preset 的人设标记（用于确认人设没有串味）。 */
 export const PERSONA_MARKERS = {
   cto: 'CTO',
@@ -124,7 +130,15 @@ async function main() {
   }
   const warn = (message) => console.log(`WARN ${message}`)
 
-  const environment = new Map(Object.entries(process.env).map(([key, value]) => [key, { value }]))
+  // 启动器要的是 launch-environment 快照（带 get/getFrom），不是 Map。
+  // 只暴露 process 层：本脚本不模拟文件层或 shell rc。
+  const values = { ...process.env }
+  const getFrom = (name, sources) => {
+    if (!sources.includes('process')) return undefined
+    const value = values[name]
+    return value === undefined ? undefined : { value, source: 'process' }
+  }
+  const environment = { get: (name) => getFrom(name, ['process']), getFrom }
   const { ctx, shutdown } = await runProfile({ environment, profile: options.profile, patchFiles: [], args: [] })
 
   try {
@@ -144,9 +158,13 @@ async function main() {
     else fail(`主会话默认 preset 是 "${String(presets.defaultId)}"，期望 "${EXPECTED_DEFAULT}"（检查 profile 的 cordis.patch.yml 覆盖）`)
 
     const skills = ctx.get('skills')
-    const globalList = await skills.list()
-    if (globalList.length === 0) pass('宿主层没有领域技能（全部在 preset 层，无泄漏）')
-    else fail(`宿主层出现 ${globalList.length} 个技能：${globalList.map((item) => item.name).join('、')}`)
+    const globalList = (await skills.list()).map((item) => item.name)
+    const unexpectedGlobal = globalList.filter((name) => !ALLOWED_GLOBAL_SKILLS.includes(name))
+    if (unexpectedGlobal.length === 0) {
+      pass(`宿主层只有基础设施技能（${globalList.join('、') || '无'}），角色技能全在 preset 层`)
+    } else {
+      fail(`宿主层出现角色技能：${unexpectedGlobal.join('、')}（应下沉到 preset 层）`)
+    }
 
     const agents = ctx.get('agents')
 
@@ -161,6 +179,7 @@ async function main() {
 
       const actual = (await skills.list({ scope: scopeOf(handle.agent.ctx) }))
         .map((item) => item.name)
+        .filter((name) => !ALLOWED_GLOBAL_SKILLS.includes(name))
         .sort()
       const want = [...expectedSkills].sort()
 

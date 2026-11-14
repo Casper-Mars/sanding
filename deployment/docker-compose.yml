@@ -337,6 +337,50 @@ services:
     logging: *default-logging
     healthcheck: *agent-healthcheck
 
+  # ── 合并 Host（单 Host 多角色，V3 目标形态）────────────────────────────────
+  # 三个角色包装进同一个 profile：技能在各自 preset 层、persona 按 preset id 门控。
+  # 保留旧三台作为回退，验收通过后（任务-10）再删。
+  dsh-agent:
+    image: ${DSH_MERGED_IMAGE:-dsh-agent-dev:local}
+    container_name: ${DSH_MERGED_CONTAINER_NAME:-dsh-agent}
+    restart: unless-stopped
+    depends_on:
+      echuan:
+        condition: service_healthy
+      browserless:
+        condition: service_healthy
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      # 与旧三台（8090/8091/8093）错开，便于并存回退
+      - "127.0.0.1:${DSH_MERGED_PORT:-8095}:3080"
+    volumes:
+      # dev 的角色需要指挥宿主 daemon（ADR-5：同进程特权，靠权限档位与红线约束）
+      - "${DOCKER_SOCKET:-/var/run/docker.sock}:/var/run/docker.sock"
+      - "${HOST_PROJECT_PATH:?请在 .env 中设置项目绝对路径}:/workspace"
+      - "${DSH_MERGED_HOME_DIR:-./data/dsh-home-agent}:/home/node/.dsh"
+      # 部署补丁层：覆盖 registry.default = cto，并声明 worker 承接全部 kind
+      - "./patches/dsh-agent.patch.yml:/home/node/.dsh/cordis.patch.yml:ro"
+      # 验收脚本（只读）：docker compose exec dsh-agent node /opt/verify-presets.mjs
+      - "../scripts/verify-presets.mjs:/opt/verify-presets.mjs:ro"
+    security_opt: *agent-security-opt
+    cap_add: *agent-cap
+    environment:
+      <<: *agent-env
+      PLUGIN_SPECS: ${DSH_MERGED_PLUGIN_SPECS:-dsh-agent-cto@0.5.2 dsh-agent-pm@0.5.0 dsh-agent-dev@0.7.0 dsh-echuan@0.2.2 dsh-agent-base@0.2.0 dsh-browser-native@0.1.0 dsh-local-admission@0.1.1}
+      # 大小写代理变量必须成对覆盖：插件 HTTP 客户端读小写变量，
+      # 注入的宿主代理会把访问驿传平台的请求转走 → 502。
+      HTTP_PROXY: ${DOCKER_PROXY:-}
+      HTTPS_PROXY: ${DOCKER_PROXY:-}
+      ALL_PROXY: ${DOCKER_PROXY:-}
+      http_proxy: ${DOCKER_PROXY:-}
+      https_proxy: ${DOCKER_PROXY:-}
+      all_proxy: ${DOCKER_PROXY:-}
+    networks:
+      - sanding
+    logging: *default-logging
+    healthcheck: *agent-healthcheck
+
   # ── 统一入口（官方 UI，零改造）────────────────────────────────────────────
   # 三个子域各自反代到一台 Agent 的官方 dsh web；每个子域都是根路径，
   # 不改写任何 /api 或 WebSocket 路径。门户页由同一端口的默认站点提供。
