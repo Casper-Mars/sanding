@@ -294,3 +294,22 @@ dsh-agent（单容器，一个 profile）
 | 派单 kind 过滤 | `echuan_v2/internal/app/worker.go`、`internal/store/work_item.go` |
 | ensureSession | `echuan_v2/kit/src/session.ts` |
 | 部署 | `sanding/deployment/docker-compose.yml`、`Caddyfile` |
+
+---
+
+## 13. 评审结论（2026-11-14）
+
+**决定：dev 内部使用 `subagent`，不启用 Agent Teams。**
+
+理由：
+
+1. 任务模型是串行推进，Teams 的核心收益（多人并行、共享看板）用不上。
+2. **真相源唯一**：驿传的 work item 已经是任务真相，Teams 再开一块任务板会形成双写与对账负担。
+3. 生命周期更简单：`subagent` 是一次性委派 + 完成通知，不需要维护成员名册、任务归属与板子状态。
+4. dev-developer / dev-tester 仍以 preset 存在，通过 `tool-subagent` 的 `agentPreset` / `allowedAgentPresets` 指定，上下文隔离不受影响。
+
+影响：
+
+- host 层**不挂** `dsh-agent-team` / `dsh-tool-agent-team`。
+- dev-leader 的并行能力仍然可用（同进程起多个 subagent），与驿传的单租约无关。
+- 原「未决 1」关闭；第 4.1 节示意图里的 `agent-team` 视为未启用。
