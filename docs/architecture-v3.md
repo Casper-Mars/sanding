@@ -326,3 +326,34 @@ dsh-agent（单容器，一个 profile）
 - 原「未决 2」关闭。
 
 影响：工作量约 -0.5 人日（合计约 8.5 人日），少一套迁移与兼容代码；M6 收口时旧三台与控制面可以直接删除，不需要保留回退数据。
+
+---
+
+## 15. 落地状态（2026-11-15）
+
+**结论：V3 合并 Host 跑通，旧三台与控制面已停用。**
+
+端到端实测（同一个项目 `E2EV-1794673142-1`，平台 16:19 起派单）：
+
+| 阶段 | kind | 平台下发 preset | kit 建出的会话 | 结果 |
+| --- | --- | --- | --- | --- |
+| 需求返工 | `requirement` | `pm` | `E2EW-…-1:pm` | 真跑一轮，`submitted` |
+| 方案设计 | `design` | `cto` | `E2EV-…-1:cto` | 真跑一轮，`submitted` → 人工通过 → `accepted` |
+| 任务拆解 | `breakdown` | `cto` | 复用同一个 `:cto` | 「会话已 live，直接复用」，产出 10 张 dev 卡 |
+| 开发 | `dev` | `dev-leader` | `E2EV-…-1:dev-leader` | 会话建立、卡片领到（仓库是假地址，未跑完） |
+
+- 同一项目三个角色落在三个会话键上，互不污染；同角色重复派单是 resume 而不是新建。
+- 平台侧独立验证：伪造 worker 心跳 → `dispatch.agent_preset = 'cto'`，映射在平台层生效。
+
+**踩到的坑（已修）**：`kit/src/index.ts` 的 ensureSession 适配器写成 `async projectId => ...`，
+第二个参数被 JS 丢掉 → 平台发了 preset 但 kit 仍用旧键。单测覆盖不到这层，只有端到端能发现；
+commit `2612578`（kit 0.3.1）。
+
+**收口动作**：
+
+- `cto-agent` / `pm-agent` / `dev-agent` / `dsh-control-plane` 已 `docker compose stop`：
+  旧 worker 仍向同一平台声明 kinds，不关会抢卡（实测 requirement 卡被旧 worker 领走）。
+  compose 定义保留，回退用 `docker compose up -d cto-agent pm-agent dev-agent`。
+- `dsh-portal` 从「三子域分流 + 门户页」改为整体反代 `dsh-agent:3080`；
+  `NO_PROXY` 同步改为 `dsh-agent`，否则 Docker Desktop 注入的宿主代理会 502。
+- 平台镜像已重建（含 `agent_preset` 派单）；kit 0.3.1 已发布到本地 4873 并装进 `dsh-agent`。
