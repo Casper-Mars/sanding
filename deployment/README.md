@@ -13,11 +13,11 @@
 | compose 服务 | 容器名 | 镜像 | 宿主端口 | 作用 |
 | --- | --- | --- | --- | --- |
 | `echuan` | `echuan-v2` | `echuan-v2:local` | `127.0.0.1:8721` → 8720 | 驿传平台：状态唯一真相源 |
-| `cto-agent` | `dsh-agent-cto` | `dsh-agent-base:local` | `127.0.0.1:8090` → 3080 | CTO Agent：requirement / design / breakdown |
-| `pm-agent` | `dsh-agent-pm` | `dsh-agent-base:local` | `127.0.0.1:8093` → 3080 | 产品经理 Agent：需求 / 方案 / 拆解 |
-| `dev-agent` | `dsh-agent-dev` | `dsh-agent-dev:local` | `127.0.0.1:8091` → 3080 | 开发 Agent：dev（含 docker / devcontainer 能力） |
+| `cto-agent` | `dsh-agent-cto` | `dsh-agent-base:local` | `127.0.0.1:8090` → 3080 | ~~CTO Agent（V2）~~ **已停止**，被 `dsh-agent` 取代，保留定义仅供回退 |
+| `pm-agent` | `dsh-agent-pm` | `dsh-agent-base:local` | `127.0.0.1:8093` → 3080 | ~~产品经理 Agent（V2）~~ **已停止**，同上 |
+| `dev-agent` | `dsh-agent-dev` | `dsh-agent-dev:local` | `127.0.0.1:8091` → 3080 | ~~开发 Agent（V2）~~ **已停止**，同上 |
 | `dsh-agent` | `dsh-agent` | `dsh-agent-dev:local` | `127.0.0.1:8095` → 3080 | **合并 Host（V3）**：cto + pm + dev 三个角色包同 profile，五个 preset |
-| `dsh-portal` | `dsh-portal` | `caddy:2-alpine` | `127.0.0.1:8080` → 80 | 统一入口：三个子域各自反代一台官方 UI + 门户页 |
+| `dsh-portal` | `dsh-portal` | `caddy:2-alpine` | `127.0.0.1:8080` → 80 | 统一入口：整体反代 `dsh-agent` 的官方 UI |
 | `dsh-control-plane` | `dsh-control-plane` | `dsh-control-plane:local` | 无（仅容器内 3080） | Web 控制面（实验，已冻结）：多 Agent 统一 UI |
 | `browserless` | `browserless` | `ghcr.io/browserless/chromium:latest` | `127.0.0.1:3001` → 3000 | 无头 Chromium：CDP / HTTP 供 agent 调用 |
 
@@ -26,8 +26,11 @@
 - 两个 agent 的 `cordis.patch.yml` 目前仍走宿主地址 `http://host.docker.internal:8721`。
 - 启动顺序：两个 agent `depends_on` 等 `echuan` healthy。
 - Web 控制面（`dsh-web-control`）在多 Agent 场景下已改由 `dsh-portal` 承担（见第 6 节），控制面服务保留仅供对比。
-- `dsh-agent` 是 V3 的目标形态，与旧三台并存：三个角色包装进同一个 profile，
-  技能在各自 preset 层、persona 按 preset id 门控；旧三台保留到收口（任务-10）。
+- `dsh-agent` 是 V3 的唯一运行形态：三个角色包装进同一个 profile，技能在各自 preset 层、
+  persona 按 preset id 门控；派单由平台下发 `agent_preset`，kit 按 `项目号:preset` 建会话。
+  旧三台（`cto-agent` / `pm-agent` / `dev-agent`）**已于 2026-11-15 停掉**——它们仍会向同一个
+  平台声明 kinds，若不关，卡片会被旧 worker 抢先领走。compose 里保留定义只为回退：
+  `docker compose up -d cto-agent pm-agent dev-agent`。
 - 浏览器访问方式（`TOKEN` 即 `.env` 的 `BROWSERLESS_TOKEN`）：
   - agent 容器内：`ws://host.docker.internal:3001?token=<TOKEN>`（不能写 127.0.0.1）
   - 宿主本机：`ws://127.0.0.1:3001?token=<TOKEN>`
@@ -123,59 +126,23 @@ echuan 的容器配置**归部署侧所有**：`deployment/echuan/echuan.contain
 
 ## 6. 统一入口（`dsh-portal`）
 
-三个 Agent 各自是一个**官方 dsh web**，用 Caddy 按子域反代，UI 零改动：
+合并成一个 Host 之后，入口也只剩一个：Caddy 把 `127.0.0.1:8080` 整体反代到 `dsh-agent:3080`，
+官方 dsh web 零改动。
 
 | 入口 | 反代目标 |
 | --- | --- |
-| `http://cto.localhost:8080` | `cto-agent:3080` |
-| `http://dev.localhost:8080` | `dev-agent:3080` |
-| `http://pm.localhost:8080` | `pm-agent:3080` |
-| `http://127.0.0.1:8080` | 门户页（三张入口卡片） |
+| `http://127.0.0.1:8080` | `dsh-agent:3080`（官方 UI） |
 
-- **不要改成路径前缀**（`/cto/`）：dsh web 的资源与 API 都是绝对路径，前缀会踩坑。
-- 每个子域都是根路径，官方 UI 不知道自己在反代后面；上游升级只需重建 agent 镜像。
-- `*.localhost` 在 Chrome / Edge / Safari 上由浏览器解析到回环，无需改 hosts；
-  系统级解析不到时可直接用 `127.0.0.1:8090` / `:8091` / `:8093`（等价入口）。
-- Docker Desktop 会把宿主代理注入容器：`dsh-portal` 必须配 `NO_PROXY` 含三个服务名，
+- **不要改成路径前缀**（`/agent/`）：dsh web 的资源与 API 都是绝对路径，前缀会踩坑。
+- 旧的多子域形态（`cto.localhost` / `dev.localhost` / `pm.localhost`）随三台 Host 一起下线；
+  需要并存时在 `Caddyfile` 里按 host matcher 加回来即可，规则见 git 历史。
+- Docker Desktop 会把宿主代理注入容器：`dsh-portal` 必须配 `NO_PROXY` 含 `dsh-agent`，
   否则反代会把内部请求交给代理，返回 502。
-- 只绑回环；要对外暴露交给隧道 / 反向代理，不要直接把 8080 发布到 0.0.0.0。
 
-改完 `Caddyfile` 或 `portal/` 后：
+### 6.1 控制面（已冻结）
 
-```bash
-docker compose up -d --force-recreate dsh-portal
-docker compose logs --tail=20 dsh-portal
-```
-
-## 7. Web 控制面（`dsh-control-plane`，实验，已冻结）
-
-> 2026-11-14 起不再迭代：它靠 fork 官方 UI 换来多 Agent 聚合，上游每次改 UI/协议都要跟。
-> 多 Agent 的日常入口改用第 6 节的 `dsh-portal`，本服务只作对比与回退保留。
-
-把 cto / pm / dev 三个 Agent 收进同一个 Web UI：侧栏是「实例 → 工作区 → 会话」树，对话区复用官方 dsh UI。
-镜像复用官方 dsh CLI + 本仓库构建的 control-plane bundle（CLI 未改动），镜像名 `dsh-control-plane:local`（约 780MB）。
-
-职责红线：控制面只做接入、路由、呈现、审计；任务编排、重试、验收归驿传。
-
-### 6.1 服务定义
-
-- harness 只绑 **loopback**（`DSH_BIND_HOST=loopback`），对外入口是 **dsh-relay 的 3443**（容器内 `0.0.0.0:3443` → 发布 `127.0.0.1:3443`）
-- relay **不打进镜像**：镜像构建只产出 monorepo 运行时，插件由 entrypoint 在容器启动时装进 profile
-  （`dsh plugin --profile web add ${DSH_RELAY_PLUGIN:-dsh-relay@0.4.0}`，幂等，装在 `DSH_HOME` 卷里，重建容器不丢）。
-  背景：dsh 从 profile 的 `node_modules` 解析插件，镜像内装在 monorepo 根下 profile 看不见，
-  启动会报 `Cannot find package 'dsh-relay'`。
-- relay 实例由包自带的 bundle 层 `insert`（id=`relay`），部署配置在 `control-plane/cordis.patch.yml` 里**按 id 覆盖**；
-  该层会整体替换 config，需要的字段必须重述。
-- 安装源：`NPM_REGISTRY`（默认 `${DSH_CONTROL_PLANE_NPM_REGISTRY:-https://registry.npmmirror.com}`）
-- 版本：`DSH_RELAY_PLUGIN`（默认 `dsh-relay@0.4.0`）。entrypoint 比对 profile 里已装版本，不一致才重装——**升级只改这个变量 + `docker compose up -d`，不用重建镜像**。
-- 实例表通过只读挂载注入：`./control-plane/control-plane.json` → `/etc/dsh/control-plane.json`
-- `DSH_HOME` 挂在 `./data/dsh-home-cp`
-- 配对与设备令牌落在 `/home/node/.dsh/relay`（卷内），证书自签、指纹在配对页
-- **密码不能写进 cordis 配置**：relay 不接受配置项/环境变量指定密码，只在 `relay/state.json` 存 scrypt(salt,hash)，
-  且设置接口要求请求源是 loopback（容器内）。宿主/手机打开 `/relay/password` 会报
-  `Set the password from the machine running the harness.`
-- 声明式做法：`.env` 里填 `DSH_RELAY_PASSWORD`（≥10 字符），然后
-  `./scripts/relay-password.sh`（从容器内 loopback 发起，幂等，随时可轮换）。
+`control-plane/` 下的 `dsh-web-control` 是「多 Agent 统一 UI」的实验产物，单 Host 之后没有存在
+价值，服务已停止（下次 `docker compose up` 也不会自动起来，除非显式指定服务名）。
 
 ### 6.2 实例表
 

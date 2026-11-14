@@ -390,9 +390,7 @@ services:
     container_name: ${DSH_PORTAL_CONTAINER_NAME:-dsh-portal}
     restart: unless-stopped
     depends_on:
-      - cto-agent
-      - dev-agent
-      - pm-agent
+      - dsh-agent
     ports:
       # 只绑回环：本机入口，公网暴露仍交给隧道 / 反代
       - "127.0.0.1:${DSH_PORTAL_PORT:-8080}:80"
@@ -404,8 +402,8 @@ services:
       TZ: ${TZ:-Asia/Shanghai}
       # Docker Desktop 会把宿主机代理注入每个容器；不绕过就会把 cto-agent:3080
       # 当成外网请求交给代理，回 502。内部服务一律直连。
-      NO_PROXY: localhost,127.0.0.1,::1,host.docker.internal,cto-agent,dev-agent,pm-agent
-      no_proxy: localhost,127.0.0.1,::1,host.docker.internal,cto-agent,dev-agent,pm-agent
+      NO_PROXY: localhost,127.0.0.1,::1,host.docker.internal,dsh-agent
+      no_proxy: localhost,127.0.0.1,::1,host.docker.internal,dsh-agent
     networks:
       - sanding
     logging: *default-logging
