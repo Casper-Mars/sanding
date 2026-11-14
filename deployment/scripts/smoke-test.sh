@@ -30,7 +30,7 @@ for pair in "cto-agent:${DSH_CTO_PORT}" "dev-agent:${DSH_DEV_PORT}" "pm-agent:${
   name=${pair%%:*}; port=${pair##*:}
   code=$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:${port}/" || echo 000)
   case "$code" in
-    200|401|403) ok "$name :$port → $code（HTTP 已就绪）" ;;
+    200|401|403) ok "$name :$port → ${code}（HTTP 已就绪）" ;;
     *)           bad "$name :$port → $code" ;;
   esac
 done
@@ -53,13 +53,13 @@ else
       fi
       ;;
     401|403)
-      bad "GET /json/version → $code（token 不匹配：检查 .env 的 BROWSERLESS_TOKEN）"
+      bad "GET /json/version → ${code}（token 不匹配：检查 .env 的 BROWSERLESS_TOKEN）"
       ;;
     000)
       bad "GET /json/version → 000（端口 ${BROWSERLESS_PORT} 无响应：容器未启动 / 端口未发布）"
       ;;
     *)
-      bad "GET /json/version → $code：${body:0:120}"
+      bad "GET /json/version → ${code}：${body:0:120}"
       ;;
   esac
 fi

@@ -1,10 +1,19 @@
 # 控制面 profile 的额外 patch 层（挂载注入，不改镜像）
-# dsh-relay：在 harness 旁起 HTTPS 监听器，提供密码 / 二维码配对 / 设备令牌
-- insert:
-    - id: relay
-      name: dsh-relay
-      config:
-        # relay 状态目录（证书、密钥、已配对设备）落在卷里，重建容器不丢
-        stateDir: /home/node/.dsh/relay
-        bind: '0.0.0.0'
-        port: 3443
+# dsh-relay：bundle 层（包自带）已 insert id=relay，这里只做 config 覆盖。
+# 注意：profile patch 覆盖该行会整体替换 config，需要的字段必须重述。
+- id: relay
+  config:
+    # relay 状态目录（证书、密钥、已配对设备）落在卷里，重建容器不丢
+    stateDir: !!js dshHomePath('relay')
+    bind: '0.0.0.0'
+    port: 3443
+    tls: self-signed
+    trustedHosts:
+      - '100.64.0.1:3443'
+      - '127.0.0.1:3443'
+    publicHostnames:
+      - '100.64.0.1'
+    compat:
+      addressGrants: true
+      addressGrantTtlMs: 86400000
+      plainPort: 0

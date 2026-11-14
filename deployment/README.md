@@ -104,6 +104,19 @@ COMPOSE_PROJECT_NAME=sanding docker compose -f ../../echuan_v2/docker-compose.ym
 # 或直接用本目录：docker compose ps / docker compose exec echuan ...
 ```
 
+## 5.1 echuan 配置归属
+
+echuan 的容器配置**归部署侧所有**：`deployment/echuan/echuan.container.toml`，只读挂载到
+容器内 `/etc/echuan/echuan.toml`。
+
+- 部署不再引用 `echuan_v2/configs/echuan.container.toml`（那是该仓库**独立部署**时用的，两者无自动同步）
+- 需要改监听/租约/worker TTL/飞书等参数，改本目录这一份，然后 `docker compose restart echuan`
+- 覆盖优先级未变：环境变量（`ECHUAN_*`）> 本文件 > 内置默认值
+- 需要临时换配置：`.env` 里设 `ECHUAN_CONFIG_FILE=<绝对路径或相对本目录的路径>`
+
+仍在跨仓库的只剩构建上下文（`ECHUAN_SRC=../../echuan_v2`，从源码构建镜像），那是「代码从哪来」，
+不属于配置耦合；若想彻底解耦，可改为直接用已构建好的镜像（`ECHUAN_IMAGE`）并去掉 `build`。
+
 ## 6. Web 控制面（`dsh-control-plane`）
 
 把 cto / pm / dev 三个 Agent 收进同一个 Web UI：侧栏是「实例 → 工作区 → 会话」树，对话区复用官方 dsh UI。
@@ -114,10 +127,22 @@ COMPOSE_PROJECT_NAME=sanding docker compose -f ../../echuan_v2/docker-compose.ym
 ### 6.1 服务定义
 
 - harness 只绑 **loopback**（`DSH_BIND_HOST=loopback`），对外入口是 **dsh-relay 的 3443**（容器内 `0.0.0.0:3443` → 发布 `127.0.0.1:3443`）
-- relay 由 `control-plane/cordis.patch.yml` 挂载启用，插件装在 `DSH_HOME` 卷里（`dsh plugin add dsh-relay`），重建容器不丢
+- relay **不打进镜像**：镜像构建只产出 monorepo 运行时，插件由 entrypoint 在容器启动时装进 profile
+  （`dsh plugin --profile web add ${DSH_RELAY_PLUGIN:-dsh-relay@0.4.0}`，幂等，装在 `DSH_HOME` 卷里，重建容器不丢）。
+  背景：dsh 从 profile 的 `node_modules` 解析插件，镜像内装在 monorepo 根下 profile 看不见，
+  启动会报 `Cannot find package 'dsh-relay'`。
+- relay 实例由包自带的 bundle 层 `insert`（id=`relay`），部署配置在 `control-plane/cordis.patch.yml` 里**按 id 覆盖**；
+  该层会整体替换 config，需要的字段必须重述。
+- 安装源：`NPM_REGISTRY`（默认 `${DSH_CONTROL_PLANE_NPM_REGISTRY:-https://registry.npmmirror.com}`）
+- 版本：`DSH_RELAY_PLUGIN`（默认 `dsh-relay@0.4.0`）。entrypoint 比对 profile 里已装版本，不一致才重装——**升级只改这个变量 + `docker compose up -d`，不用重建镜像**。
 - 实例表通过只读挂载注入：`./control-plane/control-plane.json` → `/etc/dsh/control-plane.json`
 - `DSH_HOME` 挂在 `./data/dsh-home-cp`
 - 配对与设备令牌落在 `/home/node/.dsh/relay`（卷内），证书自签、指纹在配对页
+- **密码不能写进 cordis 配置**：relay 不接受配置项/环境变量指定密码，只在 `relay/state.json` 存 scrypt(salt,hash)，
+  且设置接口要求请求源是 loopback（容器内）。宿主/手机打开 `/relay/password` 会报
+  `Set the password from the machine running the harness.`
+- 声明式做法：`.env` 里填 `DSH_RELAY_PASSWORD`（≥10 字符），然后
+  `./scripts/relay-password.sh`（从容器内 loopback 发起，幂等，随时可轮换）。
 
 ### 6.2 实例表
 

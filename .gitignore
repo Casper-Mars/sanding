@@ -4,8 +4,13 @@ deployment/data/
 deployment/secrets/
 # 本机配置
 deployment/.env
+deployment/.env.*
+deployment/backups/
 .DS_Store
 
 # agents/ 下各项目本机配置与运行期数据
 agents/*/examples/.env
 agents/*/examples/dsh-home/
+deployment/control-plane/
+deployment/echuan/
+deployment/agents/

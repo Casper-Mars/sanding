@@ -42,7 +42,7 @@ if [ -n "${NPM_REGISTRY:-}" ]; then
   REGISTRY_FLAG="--registry=$NPM_REGISTRY"
 fi
 for spec in $PLUGIN_SPECS; do
-  log "安装 $spec ${NPM_REGISTRY:+（registry=$NPM_REGISTRY）}"
+  log "安装 $spec ${NPM_REGISTRY:+（registry=${NPM_REGISTRY}）}"
   # shellcheck disable=SC2086  # REGISTRY_FLAG 为空时不应传空参数
   dsh plugin --profile "$PROFILE" add "$spec" $REGISTRY_FLAG
 done

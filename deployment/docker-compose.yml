@@ -69,6 +69,8 @@ x-agent-env: &agent-env
   NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmmirror.com}
   # GitHub PAT（.env 里配置；留空 = 容器内 gh 未登录）
   GH_PAT_TOKEN: ${GH_TOKEN:-}
+  # LLM 凭据：环境层优先级最高、只读，Web 设置页无法覆盖
+  DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
 
 services:
   # ── 驿传平台 ──────────────────────────────────────────────────────────────
@@ -119,9 +121,9 @@ services:
 
     volumes:
       # 数据库 / objects / workspaces 全部落在宿主机目录，删容器不丢数据
-      - "${ECHUAN_DATA_DIR:-${HOME}/echuan-v2-data}:/data"
-      # 配置只读挂载；单一真相源留在 echuan 仓库
-      - "${ECHUAN_CONFIG_FILE:-../../echuan_v2/configs/echuan.container.toml}:/etc/echuan/echuan.toml:ro"
+      - "${ECHUAN_DATA_DIR:-./echuan/data}:/data"
+      # 配置只读挂载；部署侧真相源在 deployment/echuan/
+      - "${ECHUAN_CONFIG_FILE:-./echuan/echuan.container.toml}:/etc/echuan/echuan.toml:ro"
 
     networks:
       - sanding
@@ -226,13 +228,15 @@ services:
       - "${HOST_PROJECT_PATH:?请在 .env 中设置项目绝对路径}:/workspace"
       # dsh home：profile / 会话 / cordis.patch.yml 由用户直接编辑
       - "${DSH_CTO_HOME_DIR:-./data/dsh-home-cto}:/home/node/.dsh"
+      # 部署补丁层（home patch）：优先级高于 Web 设置页，只读挂载
+      - "./agents/cto.patch.yml:/home/node/.dsh/cordis.patch.yml:ro"
     security_opt: *agent-security-opt
     cap_add: *agent-cap
     environment:
       <<: *agent-env
       # 插件清单：空格分隔的 <name>@<exact-version>，顺序即安装顺序
       # 镜像入口统一读 PLUGIN_SPECS；这里把服务级变量映射过去，便于 .env 里分开配置
-      PLUGIN_SPECS: ${DSH_CTO_PLUGIN_SPECS:-dsh-agent-cto@0.1.0 dsh-echuan@0.1.0 dsh-agent-base@0.1.0 dsh-browser-native@0.1.0}
+      PLUGIN_SPECS: ${DSH_CTO_PLUGIN_SPECS:-dsh-agent-cto@0.1.0 dsh-echuan@0.2.1 dsh-agent-base@0.1.0 dsh-browser-native@0.1.0}
     networks:
       - sanding
     logging: *default-logging
@@ -271,12 +275,14 @@ services:
       - "${HOST_PROJECT_PATH:?请在 .env 中设置项目绝对路径}:/workspace"
       # dsh home：profile / 会话 / cordis.patch.yml 由用户直接编辑
       - "${DSH_DEV_HOME_DIR:-./data/dsh-home-dev}:/home/node/.dsh"
+      # 部署补丁层（home patch）：优先级高于 Web 设置页，只读挂载
+      - "./agents/dev.patch.yml:/home/node/.dsh/cordis.patch.yml:ro"
     security_opt: *agent-security-opt
     cap_add: *agent-cap
     environment:
       <<: *agent-env
       # 插件清单：空格分隔的 <name>@<exact-version>，顺序即安装顺序
-      PLUGIN_SPECS: ${DSH_DEV_PLUGIN_SPECS:-dsh-agent-dev@0.2.0 dsh-echuan@0.1.0 dsh-agent-base@0.1.0 dsh-browser-native@0.1.0}
+      PLUGIN_SPECS: ${DSH_DEV_PLUGIN_SPECS:-dsh-agent-dev@0.2.0 dsh-echuan@0.2.1 dsh-agent-base@0.1.0 dsh-browser-native@0.1.0}
       # devcontainer CLI 查询海外 registry（ghcr.io）的 features 清单需要代理。
       # 注意：Docker Desktop 会把宿主 shell 的【小写】代理变量注入容器，且小写
       # no_proxy 不含 host.docker.internal；插件 HTTP 客户端读小写变量，会把访问
@@ -319,11 +325,13 @@ services:
       - "${HOST_PROJECT_PATH:?请在 .env 中设置项目绝对路径}:/workspace"
       # dsh home：profile / 会话 / cordis.patch.yml 由用户直接编辑
       - "${DSH_PM_HOME_DIR:-./data/dsh-home-pm}:/home/node/.dsh"
+      # 部署补丁层（home patch）：优先级高于 Web 设置页，只读挂载
+      - "./agents/pm.patch.yml:/home/node/.dsh/cordis.patch.yml:ro"
     security_opt: *agent-security-opt
     cap_add: *agent-cap
     environment:
       <<: *agent-env
-      PLUGIN_SPECS: ${DSH_PM_PLUGIN_SPECS:-dsh-agent-pm@0.1.0 dsh-echuan@0.1.0 dsh-agent-base@0.1.0 dsh-browser-native@0.1.0}
+      PLUGIN_SPECS: ${DSH_PM_PLUGIN_SPECS:-dsh-agent-pm@0.1.0 dsh-echuan@0.2.1 dsh-agent-base@0.1.0 dsh-browser-native@0.1.0}
     networks:
       - sanding
     logging: *default-logging
@@ -353,7 +361,7 @@ services:
     # harness 只绑 loopback（relay 要求），对外入口是 relay 的 3443。
     # 要临时在本机直连 harness，可把 DSH_CONTROL_PLANE_BIND 改为 auto 并加 3095:3080 发布。
     ports:
-      - "127.0.0.1:${DSH_CONTROL_PLANE_RELAY_PORT:-3443}:3443"
+      - "${DSH_CONTROL_PLANE_RELAY_PORT:-3443}:3443"
     volumes:
       # dsh home：profile / 会话 / 凭据 / 日志
       - "${DSH_CONTROL_PLANE_HOME_DIR:-./data/dsh-home-cp}:/home/node/.dsh"
@@ -365,6 +373,10 @@ services:
       TZ: ${TZ:-Asia/Shanghai}
       # auto = 绑容器 eth0 IP（可 publish）；loopback = 供 relay 前置
       DSH_BIND_HOST: ${DSH_CONTROL_PLANE_BIND:-loopback}
+      # 运行期插件安装源（relay 在 entrypoint 里装，不进镜像）
+      NPM_REGISTRY: ${DSH_CONTROL_PLANE_NPM_REGISTRY:-https://registry.npmmirror.com}
+      # relay 插件版本：运行期安装，升级只改这里或 .env，无需重建镜像
+      DSH_RELAY_PLUGIN: ${DSH_RELAY_PLUGIN:-dsh-relay@0.4.0}
       # 容器间直连，不能过代理
       NO_PROXY: localhost,127.0.0.1,::1,host.docker.internal,cto-agent,dev-agent,pm-agent
       no_proxy: localhost,127.0.0.1,::1,host.docker.internal,cto-agent,dev-agent,pm-agent
