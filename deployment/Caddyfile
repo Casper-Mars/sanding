@@ -1,0 +1,39 @@
+# 三个 Agent 的统一入口（官方 UI，零改造）
+#
+# 设计约束：
+#   1. 每个子域都是「根路径」——dsh web 的 /api 与 WebSocket 都用绝对路径，
+#      任何 /cto/ 这种前缀重写都会踩坑。
+#   2. 不改写 Host / Origin：dsh 的访问策略按来源地址判断，Host 沿用浏览器原文
+#      更容易与它自己的 origin 校验对齐；真出问题再加 header_up 覆盖。
+#   3. 门户页用 host matcher 分流，:80 兜底返回静态页，所以
+#      http://127.0.0.1:8080 也能直接打开。
+
+{
+	admin off
+	auto_https off
+}
+
+:80 {
+	# ── 三个官方 UI ─────────────────────────────────────────────────────
+	@cto host cto.localhost
+	handle @cto {
+		reverse_proxy cto-agent:3080
+	}
+
+	@dev host dev.localhost
+	handle @dev {
+		reverse_proxy dev-agent:3080
+	}
+
+	@pm host pm.localhost
+	handle @pm {
+		reverse_proxy pm-agent:3080
+	}
+
+	# ── 门户页（其余 Host，含 127.0.0.1 / localhost） ──────────────────
+	handle {
+		root * /srv
+		encode gzip
+		file_server
+	}
+}

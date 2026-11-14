@@ -337,8 +337,39 @@ services:
     logging: *default-logging
     healthcheck: *agent-healthcheck
 
-  # ── Web 控制面 ────────────────────────────────────────────────────────────
+  # ── 统一入口（官方 UI，零改造）────────────────────────────────────────────
+  # 三个子域各自反代到一台 Agent 的官方 dsh web；每个子域都是根路径，
+  # 不改写任何 /api 或 WebSocket 路径。门户页由同一端口的默认站点提供。
+  # 为什么不用路径前缀（/cto/）：dsh web 的资源与 API 都是绝对路径，前缀会踩坑。
+  dsh-portal:
+    image: ${DSH_PORTAL_IMAGE:-caddy:2-alpine}
+    container_name: ${DSH_PORTAL_CONTAINER_NAME:-dsh-portal}
+    restart: unless-stopped
+    depends_on:
+      - cto-agent
+      - dev-agent
+      - pm-agent
+    ports:
+      # 只绑回环：本机入口，公网暴露仍交给隧道 / 反代
+      - "127.0.0.1:${DSH_PORTAL_PORT:-8080}:80"
+    volumes:
+      - "./Caddyfile:/etc/caddy/Caddyfile:ro"
+      - "./portal:/srv:ro"
+      - "${DSH_PORTAL_DATA_DIR:-./data/caddy}:/data"
+    environment:
+      TZ: ${TZ:-Asia/Shanghai}
+      # Docker Desktop 会把宿主机代理注入每个容器；不绕过就会把 cto-agent:3080
+      # 当成外网请求交给代理，回 502。内部服务一律直连。
+      NO_PROXY: localhost,127.0.0.1,::1,host.docker.internal,cto-agent,dev-agent,pm-agent
+      no_proxy: localhost,127.0.0.1,::1,host.docker.internal,cto-agent,dev-agent,pm-agent
+    networks:
+      - sanding
+    logging: *default-logging
+
+  # ── Web 控制面（实验，冻结在 2026-11-14）───────────────────────────────────
   # 复用官方 dsh CLI + 本仓库构建的 control-plane bundle（不改 CLI）。
+  # 冻结说明：控制面靠 fork 官方 UI 换来多 Agent 聚合，上游升级要持续跟；
+  # 2026-11-14 起改走 dsh-portal（Caddy 子域 + 官方 UI），本服务仅保留供对比，不再迭代。
   # 容器内只监听 127.0.0.1:3080；宿主端口仅绑回环，对外入口由接入方案（relay / xEdge）负责。
   # 实例表只读挂载：改完 control-plane/control-plane.json 后 docker compose up -d 生效。
   dsh-control-plane:
