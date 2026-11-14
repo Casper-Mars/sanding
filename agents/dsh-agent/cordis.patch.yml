@@ -1,0 +1,10 @@
+# 单 host 角色合并补丁（profile 级覆盖，安装后追加到 profile 的 cordis.patch.yml）
+#
+# 三个角色包各自带一份 patch，其中 `agent-preset-registry` 会被加载器按 id 合并，
+# 最后一个 bundle 的 `default` 会胜出（实测是 pm）。主会话必须由 CTO 承载，
+# 所以这里显式覆盖一次；角色本身的 domain / preset / assets 都不需要重复声明。
+#
+# 用法：写进 profile 的 `cordis.patch.yml`（dsh 会把它应用在全部 bundle 之后）。
+- id: agent-preset-registry
+  config:
+    default: cto
