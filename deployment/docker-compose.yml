@@ -200,146 +200,151 @@ services:
       retries: 5
       start_period: 20s
 
-  # ── CTO Agent ────────────────────────────────────────────────────────────
-  cto-agent:
-    # 与 pm-agent 同一个镜像，角色由 PLUGIN_SPECS 决定
-    image: ${DSH_AGENT_IMAGE:-dsh-agent-base:local}
-    build:
-      context: ${DSH_AGENT_SRC:-../agents/dsh-agent-base}
-      dockerfile: Dockerfile
-      args:
-        NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmmirror.com}
-        DSH_VERSION: ${DSH_VERSION:-0.2.1-rc.2}
-    container_name: ${DSH_CTO_CONTAINER_NAME:-dsh-agent-cto}
-    restart: unless-stopped
-    depends_on:
-      echuan:
-        condition: service_healthy
-      browserless:
-        condition: service_healthy
-    # 让容器用 host.docker.internal 访问宿主服务（驿传平台）
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    ports:
-      - "127.0.0.1:${DSH_CTO_PORT:-8090}:3080"
-    volumes:
-      # 插件不挂宿主目录：启动时按 DSH_CTO_PLUGIN_SPECS 从 npm registry 安装
-      # 项目 / 工作区：agent 与宿主共享同一份数据
-      - "${HOST_PROJECT_PATH:?请在 .env 中设置项目绝对路径}:/workspace"
-      # dsh home：profile / 会话 / cordis.patch.yml 由用户直接编辑
-      - "${DSH_CTO_HOME_DIR:-./data/dsh-home-cto}:/home/node/.dsh"
-      # 部署补丁层（home patch）：优先级高于 Web 设置页，只读挂载
-      - "./agents/cto.patch.yml:/home/node/.dsh/cordis.patch.yml:ro"
-    security_opt: *agent-security-opt
-    cap_add: *agent-cap
-    environment:
-      <<: *agent-env
-      # 插件清单：空格分隔的 <name>@<exact-version>，顺序即安装顺序
-      # 镜像入口统一读 PLUGIN_SPECS；这里把服务级变量映射过去，便于 .env 里分开配置
-      PLUGIN_SPECS: ${DSH_CTO_PLUGIN_SPECS:-dsh-agent-cto@0.1.0 dsh-echuan@0.2.1 dsh-agent-base@0.1.0 dsh-browser-native@0.1.0}
-    networks:
-      - sanding
-    logging: *default-logging
-    healthcheck: *agent-healthcheck
-
-  # ── 开发 Agent ───────────────────────────────────────────────────────────
-  dev-agent:
-    image: ${DSH_DEV_IMAGE:-dsh-agent-dev:local}
-    build:
-      context: ${DSH_DEV_SRC:-../agents/dsh-agent-dev}
-      dockerfile: Dockerfile
-      args:
-        NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmmirror.com}
-        DSH_VERSION: ${DSH_VERSION:-0.2.1-rc.2}
-        GH_VERSION: ${GH_VERSION:-2.95.0}
-        # 构建期下载 gh 需要出网；留空则沿用 Docker Desktop 注入的构建代理
-        GH_PROXY: ${DOCKER_PROXY:-}
-    container_name: ${DSH_DEV_CONTAINER_NAME:-dsh-agent-dev}
-    restart: unless-stopped
-    depends_on:
-      echuan:
-        condition: service_healthy
-      # browserless 是 dev-agent 的运行时依赖：agent 通过 CDP/HTTP 调用它。
-      # service_healthy 依赖 browserless 的 healthcheck（200/429 均判健康）。
-      browserless:
-        condition: service_healthy
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    ports:
-      - "127.0.0.1:${DSH_DEV_PORT:-8091}:3080"
-    volumes:
-      # 宿主 Docker socket：docker CLI / devcontainer CLI 指挥宿主 daemon
-      - "${DOCKER_SOCKET:-/var/run/docker.sock}:/var/run/docker.sock"
-      # 插件不挂宿主目录：启动时按 PLUGIN_SPECS 从 npm registry 安装
-      # 项目 / 工作区：agent 与工具容器共享同一份数据
-      - "${HOST_PROJECT_PATH:?请在 .env 中设置项目绝对路径}:/workspace"
-      # dsh home：profile / 会话 / cordis.patch.yml 由用户直接编辑
-      - "${DSH_DEV_HOME_DIR:-./data/dsh-home-dev}:/home/node/.dsh"
-      # 部署补丁层（home patch）：优先级高于 Web 设置页，只读挂载
-      - "./agents/dev.patch.yml:/home/node/.dsh/cordis.patch.yml:ro"
-    security_opt: *agent-security-opt
-    cap_add: *agent-cap
-    environment:
-      <<: *agent-env
-      # 插件清单：空格分隔的 <name>@<exact-version>，顺序即安装顺序
-      PLUGIN_SPECS: ${DSH_DEV_PLUGIN_SPECS:-dsh-agent-dev@0.2.0 dsh-echuan@0.2.1 dsh-agent-base@0.1.0 dsh-browser-native@0.1.0}
-      # devcontainer CLI 查询海外 registry（ghcr.io）的 features 清单需要代理。
-      # 注意：Docker Desktop 会把宿主 shell 的【小写】代理变量注入容器，且小写
-      # no_proxy 不含 host.docker.internal；插件 HTTP 客户端读小写变量，会把访问
-      # 驿传平台的请求发给代理 → 502。所以大小写必须成对显式覆盖。
-      HTTP_PROXY: ${DOCKER_PROXY:-}
-      HTTPS_PROXY: ${DOCKER_PROXY:-}
-      ALL_PROXY: ${DOCKER_PROXY:-}
-      http_proxy: ${DOCKER_PROXY:-}
-      https_proxy: ${DOCKER_PROXY:-}
-      all_proxy: ${DOCKER_PROXY:-}
-    networks:
-      - sanding
-    logging: *default-logging
-    healthcheck: *agent-healthcheck
-
-  # ── 产品经理 Agent ────────────────────────────────────────────────────────
-  pm-agent:
-    # 与 cto-agent 同一个镜像，角色由 PLUGIN_SPECS 决定
-    image: ${DSH_AGENT_IMAGE:-dsh-agent-base:local}
-    build:
-      context: ${DSH_AGENT_SRC:-../agents/dsh-agent-base}
-      dockerfile: Dockerfile
-      args:
-        NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmmirror.com}
-        DSH_VERSION: ${DSH_VERSION:-0.2.1-rc.2}
-    container_name: ${DSH_PM_CONTAINER_NAME:-dsh-agent-pm}
-    restart: unless-stopped
-    depends_on:
-      echuan:
-        condition: service_healthy
-      browserless:
-        condition: service_healthy
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    ports:
-      - "127.0.0.1:${DSH_PM_PORT:-8093}:3080"
-    volumes:
-      # 插件不挂宿主目录：启动时按 PLUGIN_SPECS 从 npm registry 安装
-      # 项目 / 工作区：agent 与宿主共享同一份数据
-      - "${HOST_PROJECT_PATH:?请在 .env 中设置项目绝对路径}:/workspace"
-      # dsh home：profile / 会话 / cordis.patch.yml 由用户直接编辑
-      - "${DSH_PM_HOME_DIR:-./data/dsh-home-pm}:/home/node/.dsh"
-      # 部署补丁层（home patch）：优先级高于 Web 设置页，只读挂载
-      - "./agents/pm.patch.yml:/home/node/.dsh/cordis.patch.yml:ro"
-    security_opt: *agent-security-opt
-    cap_add: *agent-cap
-    environment:
-      <<: *agent-env
-      PLUGIN_SPECS: ${DSH_PM_PLUGIN_SPECS:-dsh-agent-pm@0.1.0 dsh-echuan@0.2.1 dsh-agent-base@0.1.0 dsh-browser-native@0.1.0}
-    networks:
-      - sanding
-    logging: *default-logging
-    healthcheck: *agent-healthcheck
-
-  # ── 合并 Host（单 Host 多角色，V3 目标形态）────────────────────────────────
-  # 三个角色包装进同一个 profile：技能在各自 preset 层、persona 按 preset id 门控。
-  # 保留旧三台作为回退，验收通过后（任务-10）再删。
+  # ── 旧三台（V2 拓扑）已注释停用 ──────────────────────────────────────────
+  # 合并 Host（dsh-agent）接管全部 kind 之后，这三台不再启动：它们仍会向同一个
+  # 平台声明 kinds，一开机就会抢卡（实测 requirement 卡被旧 worker 领走）。
+  # 需要回退时把对应块的注释去掉，再 `docker compose up -d <服务名>`：
+  #   cto-agent / dev-agent / pm-agent（端口 8090 / 8091 / 8093）
+#  # ── CTO Agent ────────────────────────────────────────────────────────────
+#  cto-agent:
+#    # 与 pm-agent 同一个镜像，角色由 PLUGIN_SPECS 决定
+#    image: ${DSH_AGENT_IMAGE:-dsh-agent-base:local}
+#    build:
+#      context: ${DSH_AGENT_SRC:-../agents/dsh-agent-base}
+#      dockerfile: Dockerfile
+#      args:
+#        NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmmirror.com}
+#        DSH_VERSION: ${DSH_VERSION:-0.2.1-rc.2}
+#    container_name: ${DSH_CTO_CONTAINER_NAME:-dsh-agent-cto}
+#    restart: unless-stopped
+#    depends_on:
+#      echuan:
+#        condition: service_healthy
+#      browserless:
+#        condition: service_healthy
+#    # 让容器用 host.docker.internal 访问宿主服务（驿传平台）
+#    extra_hosts:
+#      - "host.docker.internal:host-gateway"
+#    ports:
+#      - "127.0.0.1:${DSH_CTO_PORT:-8090}:3080"
+#    volumes:
+#      # 插件不挂宿主目录：启动时按 DSH_CTO_PLUGIN_SPECS 从 npm registry 安装
+#      # 项目 / 工作区：agent 与宿主共享同一份数据
+#      - "${HOST_PROJECT_PATH:?请在 .env 中设置项目绝对路径}:/workspace"
+#      # dsh home：profile / 会话 / cordis.patch.yml 由用户直接编辑
+#      - "${DSH_CTO_HOME_DIR:-./data/dsh-home-cto}:/home/node/.dsh"
+#      # 部署补丁层（home patch）：优先级高于 Web 设置页，只读挂载
+#      - "./agents/cto.patch.yml:/home/node/.dsh/cordis.patch.yml:ro"
+#    security_opt: *agent-security-opt
+#    cap_add: *agent-cap
+#    environment:
+#      <<: *agent-env
+#      # 插件清单：空格分隔的 <name>@<exact-version>，顺序即安装顺序
+#      # 镜像入口统一读 PLUGIN_SPECS；这里把服务级变量映射过去，便于 .env 里分开配置
+#      PLUGIN_SPECS: ${DSH_CTO_PLUGIN_SPECS:-dsh-agent-cto@0.1.0 dsh-echuan@0.2.1 dsh-agent-base@0.1.0 dsh-browser-native@0.1.0}
+#    networks:
+#      - sanding
+#    logging: *default-logging
+#    healthcheck: *agent-healthcheck
+#
+#  # ── 开发 Agent ───────────────────────────────────────────────────────────
+#  dev-agent:
+#    image: ${DSH_DEV_IMAGE:-dsh-agent-dev:local}
+#    build:
+#      context: ${DSH_DEV_SRC:-../agents/dsh-agent-dev}
+#      dockerfile: Dockerfile
+#      args:
+#        NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmmirror.com}
+#        DSH_VERSION: ${DSH_VERSION:-0.2.1-rc.2}
+#        GH_VERSION: ${GH_VERSION:-2.95.0}
+#        # 构建期下载 gh 需要出网；留空则沿用 Docker Desktop 注入的构建代理
+#        GH_PROXY: ${DOCKER_PROXY:-}
+#    container_name: ${DSH_DEV_CONTAINER_NAME:-dsh-agent-dev}
+#    restart: unless-stopped
+#    depends_on:
+#      echuan:
+#        condition: service_healthy
+#      # browserless 是 dev-agent 的运行时依赖：agent 通过 CDP/HTTP 调用它。
+#      # service_healthy 依赖 browserless 的 healthcheck（200/429 均判健康）。
+#      browserless:
+#        condition: service_healthy
+#    extra_hosts:
+#      - "host.docker.internal:host-gateway"
+#    ports:
+#      - "127.0.0.1:${DSH_DEV_PORT:-8091}:3080"
+#    volumes:
+#      # 宿主 Docker socket：docker CLI / devcontainer CLI 指挥宿主 daemon
+#      - "${DOCKER_SOCKET:-/var/run/docker.sock}:/var/run/docker.sock"
+#      # 插件不挂宿主目录：启动时按 PLUGIN_SPECS 从 npm registry 安装
+#      # 项目 / 工作区：agent 与工具容器共享同一份数据
+#      - "${HOST_PROJECT_PATH:?请在 .env 中设置项目绝对路径}:/workspace"
+#      # dsh home：profile / 会话 / cordis.patch.yml 由用户直接编辑
+#      - "${DSH_DEV_HOME_DIR:-./data/dsh-home-dev}:/home/node/.dsh"
+#      # 部署补丁层（home patch）：优先级高于 Web 设置页，只读挂载
+#      - "./agents/dev.patch.yml:/home/node/.dsh/cordis.patch.yml:ro"
+#    security_opt: *agent-security-opt
+#    cap_add: *agent-cap
+#    environment:
+#      <<: *agent-env
+#      # 插件清单：空格分隔的 <name>@<exact-version>，顺序即安装顺序
+#      PLUGIN_SPECS: ${DSH_DEV_PLUGIN_SPECS:-dsh-agent-dev@0.2.0 dsh-echuan@0.2.1 dsh-agent-base@0.1.0 dsh-browser-native@0.1.0}
+#      # devcontainer CLI 查询海外 registry（ghcr.io）的 features 清单需要代理。
+#      # 注意：Docker Desktop 会把宿主 shell 的【小写】代理变量注入容器，且小写
+#      # no_proxy 不含 host.docker.internal；插件 HTTP 客户端读小写变量，会把访问
+#      # 驿传平台的请求发给代理 → 502。所以大小写必须成对显式覆盖。
+#      HTTP_PROXY: ${DOCKER_PROXY:-}
+#      HTTPS_PROXY: ${DOCKER_PROXY:-}
+#      ALL_PROXY: ${DOCKER_PROXY:-}
+#      http_proxy: ${DOCKER_PROXY:-}
+#      https_proxy: ${DOCKER_PROXY:-}
+#      all_proxy: ${DOCKER_PROXY:-}
+#    networks:
+#      - sanding
+#    logging: *default-logging
+#    healthcheck: *agent-healthcheck
+#
+#  # ── 产品经理 Agent ────────────────────────────────────────────────────────
+#  pm-agent:
+#    # 与 cto-agent 同一个镜像，角色由 PLUGIN_SPECS 决定
+#    image: ${DSH_AGENT_IMAGE:-dsh-agent-base:local}
+#    build:
+#      context: ${DSH_AGENT_SRC:-../agents/dsh-agent-base}
+#      dockerfile: Dockerfile
+#      args:
+#        NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmmirror.com}
+#        DSH_VERSION: ${DSH_VERSION:-0.2.1-rc.2}
+#    container_name: ${DSH_PM_CONTAINER_NAME:-dsh-agent-pm}
+#    restart: unless-stopped
+#    depends_on:
+#      echuan:
+#        condition: service_healthy
+#      browserless:
+#        condition: service_healthy
+#    extra_hosts:
+#      - "host.docker.internal:host-gateway"
+#    ports:
+#      - "127.0.0.1:${DSH_PM_PORT:-8093}:3080"
+#    volumes:
+#      # 插件不挂宿主目录：启动时按 PLUGIN_SPECS 从 npm registry 安装
+#      # 项目 / 工作区：agent 与宿主共享同一份数据
+#      - "${HOST_PROJECT_PATH:?请在 .env 中设置项目绝对路径}:/workspace"
+#      # dsh home：profile / 会话 / cordis.patch.yml 由用户直接编辑
+#      - "${DSH_PM_HOME_DIR:-./data/dsh-home-pm}:/home/node/.dsh"
+#      # 部署补丁层（home patch）：优先级高于 Web 设置页，只读挂载
+#      - "./agents/pm.patch.yml:/home/node/.dsh/cordis.patch.yml:ro"
+#    security_opt: *agent-security-opt
+#    cap_add: *agent-cap
+#    environment:
+#      <<: *agent-env
+#      PLUGIN_SPECS: ${DSH_PM_PLUGIN_SPECS:-dsh-agent-pm@0.1.0 dsh-echuan@0.2.1 dsh-agent-base@0.1.0 dsh-browser-native@0.1.0}
+#    networks:
+#      - sanding
+#    logging: *default-logging
+#    healthcheck: *agent-healthcheck
+#
+#  # ── 合并 Host（单 Host 多角色，V3 目标形态）────────────────────────────────
+#  # 三个角色包装进同一个 profile：技能在各自 preset 层、persona 按 preset id 门控。
+#  # 保留旧三台作为回退，验收通过后（任务-10）再删。
   dsh-agent:
     image: ${DSH_MERGED_IMAGE:-dsh-agent-dev:local}
     build:
@@ -405,6 +410,9 @@ services:
       start_period: 90s
 
   dsh-control-plane:
+    # 冻结：默认不随 `docker compose up -d` 启动；要用时显式带 profile
+    # `docker compose --profile legacy up -d dsh-control-plane`
+    profiles: ["legacy"]
     image: ${DSH_CONTROL_PLANE_IMAGE:-dsh-control-plane:local}
     build:
       context: ${DSH_CONTROL_PLANE_SRC:-../../dsh-web-control}
@@ -415,10 +423,11 @@ services:
         NPM_REGISTRY: ${DSH_CONTROL_PLANE_NPM_REGISTRY:-https://registry.npmmirror.com}
     container_name: ${DSH_CONTROL_PLANE_CONTAINER_NAME:-dsh-control-plane}
     restart: unless-stopped
-    depends_on:
-      - cto-agent
-      - dev-agent
-      - pm-agent
+    # 依赖的旧三台已注释停用；控制面本身也处于冻结状态，不再随栈启动
+    # depends_on:
+    #   - cto-agent
+    #   - dev-agent
+    #   - pm-agent
     extra_hosts:
       - "host.docker.internal:host-gateway"
     # harness 只绑 loopback（relay 要求），对外入口是 relay 的 3443。

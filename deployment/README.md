@@ -13,9 +13,9 @@
 | compose 服务 | 容器名 | 镜像 | 宿主端口 | 作用 |
 | --- | --- | --- | --- | --- |
 | `echuan` | `echuan-v2` | `echuan-v2:local` | `127.0.0.1:8721` → 8720 | 驿传平台：状态唯一真相源 |
-| `cto-agent` | `dsh-agent-cto` | `dsh-agent-base:local` | `127.0.0.1:8090` → 3080 | ~~CTO Agent（V2）~~ **已停止**，被 `dsh-agent` 取代，保留定义仅供回退 |
-| `pm-agent` | `dsh-agent-pm` | `dsh-agent-base:local` | `127.0.0.1:8093` → 3080 | ~~产品经理 Agent（V2）~~ **已停止**，同上 |
-| `dev-agent` | `dsh-agent-dev` | `dsh-agent-dev:local` | `127.0.0.1:8091` → 3080 | ~~开发 Agent（V2）~~ **已停止**，同上 |
+| `cto-agent` | `dsh-agent-cto` | `dsh-agent-base:local` | `127.0.0.1:8090` → 3080 | ~~CTO Agent（V2）~~ **已注释停用**，被 `dsh-agent` 取代 |
+| `pm-agent` | `dsh-agent-pm` | `dsh-agent-base:local` | `127.0.0.1:8093` → 3080 | ~~产品经理 Agent（V2）~~ **已注释停用**，同上 |
+| `dev-agent` | `dsh-agent-dev` | `dsh-agent-dev:local` | `127.0.0.1:8091` → 3080 | ~~开发 Agent（V2）~~ **已注释停用**，同上 |
 | `dsh-agent` | `dsh-agent` | `dsh-agent-dev:local` | `3443`（TLS，relay） | **合并 Host（V3）**：cto + pm + dev 三个角色包同 profile + `dsh-relay` 对外 |
 | `dsh-agent` 内置 `dsh-relay` | — | （同镜像，运行期装插件） | `3443`（TLS） | **唯一对外入口**：TLS + 密码 + 设备配对，harness 本身只绑回环 |
 | `dsh-control-plane` | `dsh-control-plane` | `dsh-control-plane:local` | 无（仅容器内 3080） | Web 控制面（实验，已冻结）：多 Agent 统一 UI |
@@ -28,9 +28,12 @@
 - 对外入口只有 `dsh-relay`（见第 6 节）；`dsh-portal`（Caddy）已删除——它没有认证，且 relay 能直接干这件事。
 - `dsh-agent` 是 V3 的唯一运行形态：三个角色包装进同一个 profile，技能在各自 preset 层、
   persona 按 preset id 门控；派单由平台下发 `agent_preset`，kit 按 `项目号:preset` 建会话。
-  旧三台（`cto-agent` / `pm-agent` / `dev-agent`）**已于 2026-11-15 停掉**——它们仍会向同一个
-  平台声明 kinds，若不关，卡片会被旧 worker 抢先领走。compose 里保留定义只为回退：
+- 旧三台（`cto-agent` / `pm-agent` / `dev-agent`）在 compose 里**整段注释停用**——它们仍会向
+  同一个平台声明 kinds，一启动就抢卡（实测 requirement 卡被旧 worker 领走）。回退时把注释去掉，
   `docker compose up -d cto-agent pm-agent dev-agent`。
+- `dsh-control-plane` 挂了 `profiles: ["legacy"]`，默认 `docker compose up -d` 不会启动它；
+  需要时 `docker compose --profile legacy up -d dsh-control-plane`。
+- 因此默认栈只有三个服务：`echuan` / `dsh-agent` / `browserless`。
 - 浏览器访问方式（`TOKEN` 即 `.env` 的 `BROWSERLESS_TOKEN`）：
   - agent 容器内：`ws://host.docker.internal:3001?token=<TOKEN>`（不能写 127.0.0.1）
   - 宿主本机：`ws://127.0.0.1:3001?token=<TOKEN>`
