@@ -371,7 +371,7 @@ services:
       - "${HOST_PROJECT_PATH:?请在 .env 中设置项目绝对路径}:/workspace"
       - "${DSH_MERGED_HOME_DIR:-./data/dsh-home-agent}:/home/node/.dsh"
       # 部署补丁层：覆盖 registry.default = cto，并声明 worker 承接全部 kind
-      - "./patches/dsh-agent.patch.yml:/home/node/.dsh/cordis.patch.yml:ro"
+      - "./agents/dsh-agent.patch.yml:/home/node/.dsh/cordis.patch.yml:ro"
       # 验收脚本（只读）：docker compose exec dsh-agent node /opt/verify-presets.mjs
       - "../scripts/verify-presets.mjs:/opt/verify-presets.mjs:ro"
     security_opt: *agent-security-opt

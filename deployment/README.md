@@ -198,7 +198,7 @@ curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:3095/    # 401 = 正�
 单 Host 多角色，三个角色包（`dsh-agent-cto` / `dsh-agent-pm` / `dsh-agent-dev`）装进同一个 profile。
 
 **必须做的一件事**：三个包各带一份 `agent-preset-registry` insert，加载器按 id 合并，
-最后一个 bundle 的 `default` 胜出（实测是 `pm`）。所以 `patches/dsh-agent.patch.yml` 里显式覆盖：
+最后一个 bundle 的 `default` 胜出（实测是 `pm`）。所以 `agents/dsh-agent.patch.yml` 里显式覆盖：
 
 ```yaml
 - id: agent-preset-registry
@@ -206,7 +206,7 @@ curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:3095/    # 401 = 正�
     default: cto
 ```
 
-`patches/dsh-agent.patch.yml` 同时声明 worker 承接全部 kind（requirement / design / breakdown / dev）——
+`agents/dsh-agent.patch.yml` 同时声明 worker 承接全部 kind（requirement / design / breakdown / dev）——
 角色由平台侧的 `kind → preset` 映射决定，不再靠「一台 host 只声明一组 kind」隐式表达。
 
 **验收**（一条命令，容器内跑）：
@@ -225,7 +225,7 @@ docker compose exec dsh-agent node /opt/verify-presets.mjs --home /home/node/.ds
 
 | 会话 | 权限预设 | 沙箱 / 审批 | 由谁设置 |
 | --- | --- | --- | --- |
-| cto | `workspace-write` | 工作区内可写，每次变更需确认 | 进程默认（`patches/dsh-agent.patch.yml` 的 `defaultPreset`） |
+| cto | `workspace-write` | 工作区内可写，每次变更需确认 | 进程默认（`agents/dsh-agent.patch.yml` 的 `defaultPreset`） |
 | pm | `workspace-write` | 同上 | 同上 |
 | dev-leader / dev-developer / dev-tester | `danger-full-access` | 无沙箱限制，不弹审批 | `dsh-agent-dev` 在 `agent/created` 时按 preset 切换 |
 
