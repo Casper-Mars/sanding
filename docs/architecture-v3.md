@@ -226,7 +226,7 @@ dsh-agent（单容器，一个 profile）
 | 项 | 决策 |
 | --- | --- |
 | docker.sock | 挂进唯一 host（dev 需要） |
-| 权限预设 | dev = 完全访问；cto/pm = 需确认档位 |
+| 权限预设 | dev = `danger-full-access`（由 dev 包在 `agent/created` 按 preset 切换）；cto/pm = `workspace-write`（进程默认） |
 | 破坏性操作 | 部署、容器重建、数据删除、强制推送 → 必须人工确认 |
 | 网络 | 容器出网受代理约束；内部服务走 NO_PROXY |
 | 入口 | 仅绑回环；对外由隧道/反代 |

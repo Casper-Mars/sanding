@@ -238,6 +238,23 @@ docker compose exec dsh-agent node /opt/verify-presets.mjs --home /home/node/.ds
 
 **回退**：旧三台仍在运行（8090/8091/8093）；`dsh-agent` 出问题直接 `docker compose stop dsh-agent`。
 
+### 7.2 权限矩阵
+
+| 会话 | 权限预设 | 沙箱 / 审批 | 由谁设置 |
+| --- | --- | --- | --- |
+| cto | `workspace-write` | 工作区内可写，每次变更需确认 | 进程默认（`patches/dsh-agent.patch.yml` 的 `defaultPreset`） |
+| pm | `workspace-write` | 同上 | 同上 |
+| dev-leader / dev-developer / dev-tester | `danger-full-access` | 无沙箱限制，不弹审批 | `dsh-agent-dev` 在 `agent/created` 时按 preset 切换 |
+
+为什么 dev 必须完全访问：编码 / 构建 / 验收都要指挥宿主 Docker 与 devcontainer，
+`workspace-write` + `ask` 会让每条命令都弹确认，实际不可用。
+
+**代价与兜底**：`dsh-agent` 挂了宿主 `docker.sock`，preset 只能收窄工具清单、收窄不了
+进程能力——cto/pm 的 bash 理论上也能碰到 Docker。所以三条人设都写入了「破坏性操作红线」：
+Docker 破坏性命令（rm/stop/prune）、容器/镜像重建、数据删除、强制推送、发布上线，
+必须先说明命令与影响面并得到人工确认。这是自觉承担的风险（见架构文档 ADR-5）。
+
+
 ## 8. 与原部署方式的差异
 
 | 项 | 原来 | 现在 |

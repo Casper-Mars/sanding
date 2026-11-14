@@ -53,6 +53,15 @@ export const SHARED = ['dev-environment']
  */
 export const ALLOWED_GLOBAL_SKILLS = ['echuan-task-execution']
 
+/** 每个 preset 期望的权限预设名。 */
+export const EXPECTED_PERMISSION = {
+  cto: 'workspace-write',
+  pm: 'workspace-write',
+  'dev-leader': 'danger-full-access',
+  'dev-developer': 'danger-full-access',
+  'dev-tester': 'danger-full-access',
+}
+
 /** 每个 preset 的人设标记（用于确认人设没有串味）。 */
 export const PERSONA_MARKERS = {
   cto: 'CTO',
@@ -189,6 +198,14 @@ async function main() {
         pass(`${presetId}: ${actual.length} 个技能与预期完全一致`)
       } else {
         fail(`${presetId}: 技能清单不符（多出：${extra.join('、') || '无'}；缺少：${lack.join('、') || '无'}）`)
+      }
+
+      const wantPermission = EXPECTED_PERMISSION[presetId]
+      const permission = ctx.get('permissionPresets')
+      if (wantPermission !== undefined && permission !== undefined && typeof permission.current === 'function') {
+        const actualPermission = permission.current(handle.agent.session)
+        if (actualPermission === wantPermission) pass(`${presetId}: 权限预设 = ${wantPermission}`)
+        else fail(`${presetId}: 权限预设是 "${actualPermission}"，期望 "${wantPermission}"`)
       }
 
       const marker = PERSONA_MARKERS[presetId]

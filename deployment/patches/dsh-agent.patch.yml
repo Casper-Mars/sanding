@@ -10,6 +10,13 @@
   config:
     default: cto
 
+# 进程默认权限：cto / pm 的会话落在这里（沙箱内写工作区 + 每次变更需确认）。
+# dev 的三个 preset 由 dsh-agent-dev 在 agent/created 时切到 danger-full-access。
+- id: permission
+  name: '@deepseek-ai/dsh-permission-presets'
+  config:
+    defaultPreset: workspace-write
+
 - id: echuan
   config:
     baseUrl: http://host.docker.internal:8721 # 平台地址，结尾斜杠会被去掉
