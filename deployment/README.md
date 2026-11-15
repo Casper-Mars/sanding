@@ -1,58 +1,29 @@
 # 三鼎（Sanding）统一部署
 
-一套 compose 起五个服务（驿传 + 三个 Agent + 一个共享无头浏览器）；其中 cto 与 pm 共用同一个镜像，
-只有插件清单不同，
-替代原先「各仓库目录里各自 `docker compose up`」的方式。
-
-> **0.2.0 起不再需要自建带 stagehand extension 的浏览器镜像**：`browserless`
-> 直接用官方 `ghcr.io/browserless/chromium`，不带 `--load-extension`。
-> 浏览器只通过 CDP(WebSocket) / HTTP 被客户端使用。
-
-## 1. 拓扑
+一套 compose 起**三个服务**（驿传平台 + 合并 Host + 共享无头浏览器）：
 
 | compose 服务 | 容器名 | 镜像 | 宿主端口 | 作用 |
 | --- | --- | --- | --- | --- |
-| `echuan` | `echuan-v2` | `echuan-v2:local` | `127.0.0.1:8721` → 8720 | 驿传平台：状态唯一真相源 |
-| `cto-agent` | `dsh-agent-cto` | `dsh-agent-base:local` | `127.0.0.1:8090` → 3080 | ~~CTO Agent（V2）~~ **已注释停用**，被 `dsh-agent` 取代 |
-| `pm-agent` | `dsh-agent-pm` | `dsh-agent-base:local` | `127.0.0.1:8093` → 3080 | ~~产品经理 Agent（V2）~~ **已注释停用**，同上 |
-| `dev-agent` | `dsh-agent-dev` | `dsh-agent-dev:local` | `127.0.0.1:8091` → 3080 | ~~开发 Agent（V2）~~ **已注释停用**，同上 |
-| `dsh-agent` | `dsh-agent` | `dsh-agent-dev:local` | `3443`（TLS，relay） | **合并 Host（V3）**：cto + pm + dev 三个角色包同 profile + `dsh-relay` 对外 |
-| `dsh-agent` 内置 `dsh-relay` | — | （同镜像，运行期装插件） | `3443`（TLS） | **唯一对外入口**：TLS + 密码 + 设备配对，harness 本身只绑回环 |
-| `dsh-control-plane` | `dsh-control-plane` | `dsh-control-plane:local` | 无（仅容器内 3080） | Web 控制面（实验，已冻结）：多 Agent 统一 UI |
-| `browserless` | `browserless` | `ghcr.io/browserless/chromium:latest` | `127.0.0.1:3001` → 3000 | 无头 Chromium：CDP / HTTP 供 agent 调用 |
+| `echuan` | `echuan` | `echuan:local` | `127.0.0.1:8721` → 8720 | 驿传平台：状态唯一真相源 |
+| `dsh-agent` | `dsh-agent` | `dsh-agent-dev:local` | `0.0.0.0:3443`（TLS，relay） | **合并 Host**：cto / pm / dev 三个角色包同 profile，对外只经 `dsh-relay` |
+| `browserless` | `browserless` | `ghcr.io/browserless/chromium` | `127.0.0.1:3000` → 3000 | 无头 Chromium：CDP / HTTP 供 agent 调用 |
 
-- compose 项目名：`sanding`；容器名保持旧名，兼容既有脚本与宿主工具。
-- 内部网络 `sanding`：容器间可用服务名互访（如 `echuan:8720`）。
-- 两个 agent 的 `cordis.patch.yml` 目前仍走宿主地址 `http://host.docker.internal:8721`。
-- 启动顺序：两个 agent `depends_on` 等 `echuan` healthy。
-- 对外入口只有 `dsh-relay`（见第 6 节）；`dsh-portal`（Caddy）已删除——它没有认证，且 relay 能直接干这件事。
-- `dsh-agent` 是 V3 的唯一运行形态：三个角色包装进同一个 profile，技能在各自 preset 层、
-  persona 按 preset id 门控；派单只下发 `kind`；kit 按本机 `worker.presetByKind` 解析 preset，再按 `项目号:preset` 建会话。
-- 旧三台（`cto-agent` / `pm-agent` / `dev-agent`）在 compose 里**整段注释停用**——它们仍会向
-  同一个平台声明 kinds，一启动就抢卡（实测 requirement 卡被旧 worker 领走）。回退时把注释去掉，
-  `docker compose up -d cto-agent pm-agent dev-agent`。
-- `dsh-control-plane` 挂了 `profiles: ["legacy"]`，默认 `docker compose up -d` 不会启动它；
-  需要时 `docker compose --profile legacy up -d dsh-control-plane`。
-- 因此默认栈只有三个服务：`echuan` / `dsh-agent` / `browserless`。
-- 浏览器访问方式（`TOKEN` 即 `.env` 的 `BROWSERLESS_TOKEN`）：
-  - agent 容器内：`ws://host.docker.internal:3001?token=<TOKEN>`（不能写 127.0.0.1）
-  - 宿主本机：`ws://127.0.0.1:3001?token=<TOKEN>`
-  - HTTP：`http://127.0.0.1:3001/json/version?token=<TOKEN>`、`/pressure`、`/content` 等
+- compose 项目名：`sanding`；容器间经 `sanding` 网络用服务名互访（如 `echuan:8720`）。
+- 启动顺序：`dsh-agent` 等 `echuan` 与 `browserless` healthy。
+- **两个服务只绑回环**（echuan、browserless）；对外唯一入口是 `dsh-agent` 里的 relay（3443）。
+- 旧三台（`cto-agent` / `pm-agent` / `dev-agent`）与控制面（`dsh-control-plane`）**已删除**。
+  它们仍会向同一平台声明 kinds，一启动就抢卡（实测 requirement 卡被旧 worker 领走）。
+  需要历史实现时看 git 历史（提交 `b497038` 之前）。
 
-## 2. 依赖
+## 1. 依赖
 
-宿主机上需要存在（路径写在 `.env`）：
+宿主机上需要（路径写在 `.env`）：
 
-- 源码：`ECHUAN_SRC`（同级仓库）+ `DSH_AGENT_SRC` / `DSH_DEV_SRC`（本仓库 `agents/`）
-- **不需要任何宿主插件源码**：两个 agent 的插件都在容器启动时按 `.env` 的
-  `DSH_CTO_PLUGIN_SPECS` / `DSH_PM_PLUGIN_SPECS` / `DSH_DEV_PLUGIN_SPECS` 从 npm registry 安装到 profile。
+- 源码：`ECHUAN_SRC`（同级仓库）+ `DSH_DEV_SRC`（本仓库 `agents/dsh-agent-dev`）
+- **不需要宿主插件源码**：插件在容器启动时按 `.env` 的 `DSH_MERGED_PLUGIN_SPECS` 从 npm registry 装进 profile
+- `browserless` 不构建镜像，只需能拉 `ghcr.io/browserless/chromium`
 
-`browserless` 不需要本地源码，也不构建镜像，只需能拉取 `ghcr.io/browserless/chromium`
-（首次 `up` 会拉取；网络受限时先配 daemon 镜像加速或宿主代理）。
-
-可选：Web 控制面源码 `../dsh-web-control`（仅开发态起控制面时需要，不参与 compose）。
-
-## 3. 配置
+## 2. 配置
 
 ```bash
 cp .env.example .env
@@ -62,218 +33,129 @@ cp .env.example .env
 
 | 变量 | 说明 |
 | --- | --- |
+| `ECHUAN_SRC` / `DSH_DEV_SRC` | 两个镜像的构建上下文 |
 | `HOST_PROJECT_PATH` | agent 共享工作区（挂 `/workspace`） |
-| `ECHUAN_DATA_DIR` | 驿传 SQLite / objects / workspaces 宿主目录 |
-| `DSH_CTO_HOME_DIR` / `DSH_PM_HOME_DIR` / `DSH_DEV_HOME_DIR` | 三个 agent 的 dsh home（profile、会话、`cordis.patch.yml`） |
-| `ECHUAN_PORT` / `DSH_CTO_PORT` / `DSH_PM_PORT` / `DSH_DEV_PORT` | 宿主回环端口（8721 / 8090 / 8093 / 8091） |
-| `DOCKER_SOCKET` | dev-agent 指挥宿主 daemon 的 socket |
-| `DOCKER_PROXY` | devcontainer 访问 ghcr.io 的代理；空 = 直连 |
-| `DSH_CTO_PLUGIN_SPECS` | cto-agent 的插件清单（`<name>@<version>`，空格分隔，顺序即安装顺序） |
-| `DSH_PM_PLUGIN_SPECS` | pm-agent 的插件清单（同上） |
-| `DSH_DEV_PLUGIN_SPECS` | dev-agent 的插件清单（同上） |
-| `GH_TOKEN` | dev-agent 用的 GitHub PAT；留空 = 容器内 gh 未登录 |
-| `BROWSERLESS_IMAGE` | 浏览器镜像，默认官方 `ghcr.io/browserless/chromium:latest`；生产建议固定 tag/digest |
-| `BROWSERLESS_PORT` | 浏览器宿主回环端口，默认 `3001`（容器内 3000） |
-| `BROWSERLESS_TOKEN` | **必填**，访问令牌；`openssl rand -hex 32` 生成，不要用 `test-token` |
-| `BROWSERLESS_CONCURRENT` / `QUEUED` / `TIMEOUT` | 并发会话数 / 排队数 / 会话超时（毫秒） |
-| `BROWSERLESS_SHM_SIZE` | Chrome 共享内存，默认 `2g`（低于 2g 易崩） |
-| `BROWSERLESS_DATA_DIR` | 浏览器用户数据目录，默认 `./data/browserless` |
-| `BROWSERLESS_CONTAINER_NAME` | 容器名，默认 `browserless` |
+| `ECHUAN_DATA_DIR` | 驿传 SQLite / objects / workspaces 宿主目录（默认 `./echuan/data`） |
+| `DSH_MERGED_HOME_DIR` | 合并 Host 的 dsh home（默认 `./data/dsh-home-agent`） |
+| `ECHUAN_PORT` | 驿传宿主回环端口，默认 `8721` |
+| `DSH_RELAY_PORT` / `DSH_RELAY_BIND` | 对外入口端口 / 绑定地址（默认 `3443` / `0.0.0.0`） |
+| `DSH_MERGED_PLUGIN_SPECS` | 合并 Host 的插件清单（`<name>@<version>`，空格分隔，顺序即安装顺序） |
+| `NPM_REGISTRY` | 插件安装源；指向本地 verdaccio 时写 `http://host.docker.internal:4873` |
+| `DOCKER_SOCKET` | 合并 Host 指挥宿主 daemon 的 socket |
+| `DOCKER_PROXY` | devcontainer / 插件访问外网的代理；空 = 直连 |
+| `GH_TOKEN` | GitHub PAT；留空 = 容器内 gh 未登录 |
+| `BROWSERLESS_TOKEN` | **必填**，`openssl rand -hex 32` 生成，不要用 `test-token` |
+| `DEEPSEEK_API_KEY` | LLM 凭据（环境层优先，Web 设置页无法覆盖） |
+| `DSH_RELAY_PLUGIN` / `DSH_RELAY_PASSWORD` | relay 插件版本 / 登录密码（≥10 字符） |
 
-`.env` 与 `data/`、`secrets/` 都在 `.gitignore` 里，不会进仓。
+`.env`、`data/`、`secrets/` 都在 `.gitignore` 里，不会进仓。
 
-## 4. 日常命令
+## 3. 日常命令
 
 ```bash
 ./scripts/up.sh                # 启动并等到 healthy（加 --build 重建镜像）
 ./scripts/down.sh              # 停止并移除容器（数据保留）
 ./scripts/status.sh            # 容器状态 + 端口探活 + 已注册 worker
-./scripts/smoke-test.sh        # 冒烟：readyz、两个 agent HTTP、browserless、worker 注册
+./scripts/smoke-test.sh        # 冒烟：readyz、relay health、browserless、worker 注册
 
-docker compose logs -f --tail=100 cto-agent
-docker compose logs -f --tail=100 dev-agent
-docker compose logs -f --tail=100 browserless
+docker compose logs -f --tail=100 dsh-agent
 docker compose build echuan    # 只重建某个镜像
 docker compose up -d echuan    # 只更新某个服务
 ```
 
-## 5. 数据与备份
+> 如果以前起过旧三台 / 控制面，第一次用新 compose 会报 orphan containers：
+> `docker compose up -d --remove-orphans` 清掉即可。它们都是 bind mount，删容器不丢数据。
+
+## 4. 数据与备份
 
 | 数据 | 位置 | 备份 |
 | --- | --- | --- |
-| 驿传库 / 资料 / 工作区 | `$ECHUAN_DATA_DIR`（默认 `~/echuan-v2-data`） | `echuan_v2/scripts/backup.sh` |
-| CTO Agent 会话与 profile | `deployment/data/dsh-home-cto` | 目录整体打包即可 |
-| PM Agent 会话与 profile | `deployment/data/dsh-home-pm` | 目录整体打包即可 |
-| 开发 Agent 会话与 profile | `deployment/data/dsh-home-dev` | 目录整体打包即可 |
-| 浏览器用户数据 / 下载 | `deployment/data/browserless` | 可删（丢失 Cookie / 缓存）；备份按需 |
+| 驿传库 / 资料 / 工作区 | `$ECHUAN_DATA_DIR`（默认 `./echuan/data`） | `echuan_v2/scripts/backup.sh` |
+| 合并 Host 会话 / profile / relay 证书与配对设备 | `deployment/data/dsh-home-agent` | 目录整体打包即可 |
+| 浏览器用户数据 / 下载 | `deployment/data/browserless` | 可删（丢 Cookie / 缓存）；按需备份 |
 
-**注意**：`echuan_v2/scripts/{backup,restore}.sh` 默认按项目名 `echuan-v2` 找容器。现在部署在 `sanding` 项目下，调用时需显式指定：
-
-```bash
-COMPOSE_PROJECT_NAME=sanding docker compose -f ../../echuan_v2/docker-compose.yml ps
-# 或直接用本目录：docker compose ps / docker compose exec echuan ...
-```
-
-## 5.1 echuan 配置归属
+## 4.1 echuan 配置归属
 
 echuan 的容器配置**归部署侧所有**：`deployment/echuan/echuan.container.toml`，只读挂载到
 容器内 `/etc/echuan/echuan.toml`。
 
-- 部署不再引用 `echuan_v2/configs/echuan.container.toml`（那是该仓库**独立部署**时用的，两者无自动同步）
-- 需要改监听/租约/worker TTL/飞书等参数，改本目录这一份，然后 `docker compose restart echuan`
-- 覆盖优先级未变：环境变量（`ECHUAN_*`）> 本文件 > 内置默认值
-- 需要临时换配置：`.env` 里设 `ECHUAN_CONFIG_FILE=<绝对路径或相对本目录的路径>`
+- 部署不引用 `echuan_v2/configs/echuan.container.toml`（那是该仓库**独立部署**时用的）
+- 改监听 / 租约 / worker TTL / 飞书等参数，改本目录这一份，然后 `docker compose restart echuan`
+- 优先级：环境变量（`ECHUAN_*`）> 本文件 > 内置默认值
 
-仍在跨仓库的只剩构建上下文（`ECHUAN_SRC=../../echuan_v2`，从源码构建镜像），那是「代码从哪来」，
-不属于配置耦合；若想彻底解耦，可改为直接用已构建好的镜像（`ECHUAN_IMAGE`）并去掉 `build`。
-
-## 6. 对外入口（`dsh-relay`）
-
-合并成一个 Host 之后，入口不是反代，而是 Host 自己装的 **`dsh-relay`**：
+## 5. 对外入口（`dsh-relay`）
 
 ```
 手机 / 浏览器 ──TLS──▶ dsh-agent:3443（relay）──HTTP──▶ 127.0.0.1:3080（harness）
                          ├─ /relay/login     密码登录
                          ├─ /relay/password  设密码（只接受本机）
-                         ├─ /relay/pair      QR / 8 位码配对设备
+                         ├─ /relay/pair      配对设备（QR / 8 位码）
                          └─ /relay/devices   逐设备吊销
 ```
 
-- **harness 只绑回环**：`DSH_BIND_HOST=loopback`（入口脚本里映射成 `dsh web --host 127.0.0.1`）。
-  relay 发现 webserver 已监听网络地址会**拒绝启动**，所以「relay 挂了」的结果是连不上，
-  而不是裸奔在网络上——这是选它而不是 Caddy 的核心理由。
-- 端口发布：`${DSH_RELAY_BIND:-0.0.0.0}:${DSH_RELAY_PORT:-3443}:3443`。默认绑 `0.0.0.0`
-  是为了手机能连；只想本机用时把 `DSH_RELAY_BIND` 改成 `127.0.0.1`。
-- **设密码**：relay 只接受「运行 harness 的那台机器」设密码，容器化之后就是容器本身：
+- **harness 只绑回环**：`DSH_BIND_HOST=loopback`。relay 发现 webserver 已监听网络地址会拒绝启动，
+  所以「relay 挂了」的结果是连不上，而不是裸奔在网络上。
+- **设 / 改密码**（relay 只接受「运行 harness 的机器」设密码，容器化后就是容器本身）：
 
   ```bash
   ./scripts/relay-password.sh            # 读 .env 的 DSH_RELAY_PASSWORD
   ./scripts/relay-password.sh 'xxxxxxx'  # 或显式传入（≥10 字符）
   ```
 
-- 配对手机：在**运行容器的这台机器**上打开 `https://127.0.0.1:3443/relay/pair`（自签证书需要点
-  「继续」），用手机扫码或输入 8 位码；每个设备独立 token，可在 `/relay/devices` 单独吊销。
-- 自签证书：`tls: self-signed`，证书与已配对设备都在卷里的 `~/.dsh/relay/`，重建容器不丢。
-  正式对外（公网）时应换真证书，并把 `compat.addressGrants` 关掉，见插件文档。
+- **配对设备**：本机打开 `https://127.0.0.1:3443/relay/pair`（自签证书点「继续」），手机扫码或输 8 位码。
+- 自签证书、已配对设备在 `data/dsh-home-agent/relay/`，重建容器不丢。
+- **组网访问（xedge / Tailscale 等）**：relay 只信任 loopback + `publicHostnames` 里列出的地址，
+  否则 403 `untrusted-host`。当前 `agents/dsh-agent.patch.yml` 已加入 xedge 的 `100.64.0.1`；
+  换网段或绑了域名时把新地址加进去，重建容器即可（证书 SAN 会同步更新）。
 - **不要**在 relay 前面再套 nginx / Caddy / Tailscale Serve：那些代理从回环连进来，
-  relay 会把它们当成「本机操作员」，等于免密。
+  relay 会当成「本机操作员」，等于免密。
 
-### 6.1 控制面（已冻结）
+## 6. 合并 Host 与角色
 
-`control-plane/` 下的 `dsh-web-control` 是「多 Agent 统一 UI」的实验产物，单 Host 之后没有存在
-价值，服务已停止（下次 `docker compose up` 也不会自动起来，除非显式指定服务名）。
+三个角色包（`dsh-agent-cto` / `dsh-agent-pm` / `dsh-agent-dev`）装进同一个 profile。
 
-### 6.2 实例表
+- **必须**在 `agents/dsh-agent.patch.yml` 覆盖 `agent-preset-registry.default: cto`
+  （三个包各带一份 insert，最后一个 bundle 的 default 胜出，实测是 pm）。
+- 派单只下发 `kind`；kit 按 `worker.presetByKind` 在本机解析 preset（默认
+  `requirement=pm, design=cto, breakdown=cto, dev=dev-leader`），再按 `项目号:preset` 建会话。
+  新增角色只改这一处 + 装好 preset，平台零改动。
 
-`control-plane/control-plane.json`，用 compose 服务名寻址（容器间走 `sanding` 网络）：
-
-| 实例 id | 名称 | 地址 | 对应 compose 服务 |
-| --- | --- | --- | --- |
-| `dsh-worker-cto` | 技术总监 | `cto-agent:3080` | `cto-agent` |
-| `dsh-worker-dev` | 开发团队 | `dev-agent:3080` | `dev-agent` |
-| `dsh-worker-pm` | 产品经理 | `pm-agent:3080` | `pm-agent` |
-
-改完实例表需要重建容器才生效（插件配置不热更新）：
-
-```bash
-docker compose up -d --no-build --force-recreate dsh-control-plane
-```
-
-### 6.3 常用命令
-
-```bash
-docker compose up -d --build dsh-control-plane      # 首次/改代码后构建
-docker compose logs -f --tail=100 dsh-control-plane
-docker compose ps dsh-control-plane                  # 期望 healthy
-curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:3095/    # 401 = 正常（缺 token）
-# 带 token 访问：从 docker compose logs 里取 ?token=... 的完整 URL，浏览器打开
-```
-
-### 6.4 注意
-
-- 启动日志会打印带 `?token=` 的 URL，不带 token 是 401
-- 构建参数 `DSH_CLIENT_COMMIT_HASH` 默认 `0000000`，需要真实 commit 时在 `.env` 设 `DSH_CONTROL_PLANE_COMMIT`
-- 构建期用公共 npm 源（`DSH_CONTROL_PLANE_NPM_REGISTRY`），不继承宿主 `.env` 里指向本地 verdaccio 的 `NPM_REGISTRY`
-- 镜像默认用 `Dockerfile.slim`（裁掉 codex / claude-sdk / libreoffice-wasm 等后端）；需要完整能力可设 `DSH_CONTROL_PLANE_DOCKERFILE=Dockerfile`
-
-## 7.1 合并 Host（`dsh-agent`）
-
-单 Host 多角色，三个角色包（`dsh-agent-cto` / `dsh-agent-pm` / `dsh-agent-dev`）装进同一个 profile。
-
-**必须做的一件事**：三个包各带一份 `agent-preset-registry` insert，加载器按 id 合并，
-最后一个 bundle 的 `default` 胜出（实测是 `pm`）。所以 `agents/dsh-agent.patch.yml` 里显式覆盖：
-
-```yaml
-- id: agent-preset-registry
-  config:
-    default: cto
-```
-
-`agents/dsh-agent.patch.yml` 同时声明 worker 承接全部 kind（requirement / design / breakdown / dev）——
-角色由平台侧的 `kind → preset` 映射决定，不再靠「一台 host 只声明一组 kind」隐式表达。
-
-**验收**（一条命令，容器内跑）：
+验收（容器内跑）：
 
 ```bash
 docker compose exec dsh-agent node /opt/verify-presets.mjs --home /home/node/.dsh --profile web
 ```
 
-断言：五个角色 preset（cto / pm / dev-leader / dev-developer / dev-tester）注册、默认 cto、
+断言：五个 preset（cto / pm / dev-leader / dev-developer / dev-tester）注册、默认 cto、
 宿主层只有基础设施技能、每个 preset 的技能清单与预期逐字一致、persona 不串味。
-基线 preset（standard / ptc / minimal / cordis）来自 `dsh-agent-base`，属正常。
 
-**回退**：旧三台仍在运行（8090/8091/8093）；`dsh-agent` 出问题直接 `docker compose stop dsh-agent`。
-
-### 7.2 权限矩阵
+### 6.1 权限矩阵
 
 | 会话 | 权限预设 | 沙箱 / 审批 | 由谁设置 |
 | --- | --- | --- | --- |
-| cto | `workspace-write` | 工作区内可写，每次变更需确认 | 进程默认（`agents/dsh-agent.patch.yml` 的 `defaultPreset`） |
+| cto | `workspace-write` | 工作区内可写，每次变更需确认 | `agents/dsh-agent.patch.yml` 的 `defaultPreset` |
 | pm | `workspace-write` | 同上 | 同上 |
 | dev-leader / dev-developer / dev-tester | `danger-full-access` | 无沙箱限制，不弹审批 | `dsh-agent-dev` 在 `agent/created` 时按 preset 切换 |
 
-为什么 dev 必须完全访问：编码 / 构建 / 验收都要指挥宿主 Docker 与 devcontainer，
-`workspace-write` + `ask` 会让每条命令都弹确认，实际不可用。
+为什么 dev 必须完全访问：编码 / 构建 / 验收都要指挥宿主 Docker 与 devcontainer。
 
-**代价与兜底**：`dsh-agent` 挂了宿主 `docker.sock`，preset 只能收窄工具清单、收窄不了
-进程能力——cto/pm 的 bash 理论上也能碰到 Docker。所以三条人设都写入了「破坏性操作红线」：
-Docker 破坏性命令（rm/stop/prune）、容器/镜像重建、数据删除、强制推送、发布上线，
-必须先说明命令与影响面并得到人工确认。这是自觉承担的风险（见架构文档 ADR-5）。
+**代价与兜底**：`dsh-agent` 挂了宿主 `docker.sock`，preset 只能收窄工具清单、收窄不了进程能力
+——cto/pm 的 bash 理论上也能碰 Docker。三个人设都写入了破坏性操作红线：Docker 破坏性命令、
+容器/镜像重建、数据删除、强制推送、发布上线，必须先说明影响面并得到人工确认（ADR-5）。
 
+## 7. 排障
 
-## 8. 与原部署方式的差异
-
-| 项 | 原来 | 现在 |
-| --- | --- | --- |
-| 启动方式 | 三个目录各自 `docker compose up` | 本目录一条 `docker compose up -d` |
-| compose 项目名 | `echuan-v2` / `dsh-agent-base` / `dsh-dev-agent` | 统一 `sanding` |
-| 容器名 | `echuan-v2` / `dsh-agent-base` / `dsh-agent-dev` | `echuan-v2` / `dsh-agent-cto` / `dsh-agent-dev` |
-| 端口 | 8721 / 8090 / 8091 | 不变 |
-| 镜像名 | `*-local` | 不变 |
-
-| dsh home | 各仓库目录下 `dsh-home/` | 复制到 `deployment/data/`，旧目录保留可回滚 |
-| 浏览器 | 自建 `browserless-stagehand` 镜像（带 stagehand extension） | 官方 `ghcr.io/browserless/chromium`，无扩展 |
-
-回滚：
-
-```bash
-cd ~/project/opc/sanding/deployment && ./scripts/down.sh
-cd ~/project/opc/echuan_v2 && docker compose up -d
-cd ~/project/opc/sanding/agents/dsh-agent-cto/examples && docker compose up -d
-cd ~/project/opc/sanding/agents/dsh-agent-dev/examples && docker compose up -d
-```
-
-（旧 `dsh-home` 目录未删，回滚后状态与切换前一致。）
-
-## 9. 排障
-
-- 控制面里某个实例连不上：先 `curl http://127.0.0.1:<端口>/` 确认该 Agent 宿主端口通，再看 `docker compose logs <服务>`；实例 id / 端口与 `control-plane/control-plane.json` 不一致也会连不上。
-- `worker 'base'/'dev' 未注册`：看对应 agent 日志里的 `[dsh-echuan]` 行；多半是 `cordis.patch.yml` 的 `baseUrl` 或 `worker.poll.enable` 不对，或平台没起。
-- agent 里访问平台 502：代理变量没排除 `host.docker.internal`。compose 已把大小写 `NO_PROXY` 成对覆盖，若自行加变量要保持成对。
-- `dsh: skipping profile bundle ...`：profile 里残留了本容器没挂载的插件，删掉 `dsh-home-*/profiles/web/package.json` 中对应的 `dsh.profile.bundles` 与 `dependencies` 条目后重启。
-- 容器 healthy 但 agent 打不开：token 在日志里，`docker compose logs cto-agent | grep token=`。
-- `browserless` 返回 401：`BROWSERLESS_TOKEN` 与客户端使用的 token 不一致（所有端点都鉴权，包括 `/json/version`、`/pressure`）。
-- `browserless` 日志报 `/data` 无权限：镜像内用户是 `blessuser`（UID 999），
-  `chown -R 999:999 deployment/data/browserless` 后重启。
+- `orphan containers` 告警：旧三台已从 compose 删除，`docker compose up -d --remove-orphans`。
+- `worker 'core' 未注册`：看 `docker compose logs dsh-agent | grep dsh-echuan`；
+  多半是 `baseUrl`、`worker.poll.enable` 或 `worker.presetByKind` 为空。
+- agent 里访问平台 502：代理变量没排除 `host.docker.internal`。compose 已把大小写
+  `NO_PROXY` 成对覆盖，自行加变量时保持成对。
+- 手机访问 403 `untrusted-host`：把访问用的地址/域名加进 relay 的 `publicHostnames`。
+- 手机只看到 403「Not signed in」：Host 已放行，只是没登录 —— 输入 `DSH_RELAY_PASSWORD`。
+- `dsh: skipping profile bundle ...`：profile 里残留了没挂载的插件，删掉
+  `data/dsh-home-agent/profiles/web/package.json` 里对应的 bundle 与 dependency 后重启。
+- `browserless` 401：`BROWSERLESS_TOKEN` 与客户端 token 不一致（所有端点都鉴权）。
+- `browserless` 报 `/data` 无权限：镜像内是 `blessuser`（UID 999），
+  `chown -R 999:999 data/browserless` 后重启。
 - `browserless` 反复重启 / Chrome 崩溃：确认 `shm_size` 为 `2g`。
-- 从 agent 容器连不上 `127.0.0.1:3001`：容器里的 127.0.0.1 是它自己，必须用 `host.docker.internal:3001`。
+- 容器里连 `127.0.0.1:3000` 连不上：容器里的 127.0.0.1 是它自己，必须用 `host.docker.internal:3000`。

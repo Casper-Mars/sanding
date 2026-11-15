@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 部署冒烟：四个服务连通性 + 两个 agent 已在驿传注册为 worker。
+# 部署冒烟：三个服务连通性 + 合并 Host 已在驿传注册为 worker。
 #
 #   ./scripts/smoke-test.sh
 #
@@ -11,10 +11,8 @@ cd "$(dirname "$0")/.."
 set -a; . ./.env; set +a
 
 ECHUAN_PORT="${ECHUAN_PORT:-8721}"
-DSH_CTO_PORT="${DSH_CTO_PORT:-8090}"
-DSH_DEV_PORT="${DSH_DEV_PORT:-8091}"
-DSH_PM_PORT="${DSH_PM_PORT:-8093}"
-BROWSERLESS_PORT="${BROWSERLESS_PORT:-3001}"
+DSH_RELAY_PORT="${DSH_RELAY_PORT:-3443}"
+BROWSERLESS_PORT="${BROWSERLESS_PORT:-3000}"
 
 fail=0
 ok()   { printf '  ✅ %s\n' "$*"; }
@@ -24,16 +22,14 @@ echo "== 1. 驿传平台 =="
 code=$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:${ECHUAN_PORT}/readyz" || echo 000)
 [ "$code" = "200" ] && ok "GET /readyz → 200" || bad "GET /readyz → $code"
 
-echo "== 2. Agent 容器 HTTP =="
-# dsh web 默认 token 鉴权，未带 token 返回 401；有响应即说明服务已起。
-for pair in "cto-agent:${DSH_CTO_PORT}" "dev-agent:${DSH_DEV_PORT}" "pm-agent:${DSH_PM_PORT}"; do
-  name=${pair%%:*}; port=${pair##*:}
-  code=$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:${port}/" || echo 000)
-  case "$code" in
-    200|401|403) ok "$name :$port → ${code}（HTTP 已就绪）" ;;
-    *)           bad "$name :$port → $code" ;;
-  esac
-done
+echo "== 2. dsh-agent（dsh-relay） =="
+# relay 健康端点不需要认证；harness 本身只绑容器回环，宿主侧只能经 3443 验。
+relay=$(curl -sk -m 10 "https://127.0.0.1:${DSH_RELAY_PORT}/relay/health" || true)
+if printf '%s' "$relay" | grep -q '"service":"dsh-relay"'; then
+  ok "GET https://127.0.0.1:${DSH_RELAY_PORT}/relay/health → ok"
+else
+  bad "GET https://127.0.0.1:${DSH_RELAY_PORT}/relay/health 未返回 dsh-relay 健康响应：${relay:0:120}"
+fi
 
 echo "== 3. browserless（无头 Chromium） =="
 # 所有端点都需要 token；/json/version 是只读的版本探针，能同时验证鉴权与 Chromium 可用。
@@ -66,11 +62,11 @@ fi
 
 echo "== 4. worker 注册 =="
 if curl -s "http://127.0.0.1:${ECHUAN_PORT}/v1/workers" \
-  | python3 "$(dirname "$0")/workers.py" --require-active base dev; then
+  | python3 "$(dirname "$0")/workers.py" --require-active core; then
   :
 else
   fail=$((fail + 1))
-  echo "    提示：检查 dsh-home-*/profiles/web/cordis.patch.yml 的 baseUrl 与 worker.poll.enable"
+  echo "    提示：检查 agents/dsh-agent.patch.yml 的 baseUrl、worker.poll.enable 与 worker.presetByKind"
 fi
 
 echo

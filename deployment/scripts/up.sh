@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 拉起三鼎全部服务（驿传 + CTO Agent + 开发 Agent），并等到 healthy。
+# 拉起三鼎全部服务（驿传 + 合并 Host + browserless），并等到 healthy。
 #
 #   ./scripts/up.sh              # 用已有镜像启动
 #   ./scripts/up.sh --build      # 先重建镜像再启动

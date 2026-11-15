@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 三鼎运行态一览：容器状态 + 驿传 readyz + worker 注册情况。
+# 三鼎运行态一览：容器状态 + 驿传 readyz + relay 健康 + worker 注册情况。
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -8,20 +8,16 @@ cd "$(dirname "$0")/.."
 set -a; . ./.env; set +a
 
 ECHUAN_PORT="${ECHUAN_PORT:-8721}"
-DSH_CTO_PORT="${DSH_CTO_PORT:-8090}"
-DSH_DEV_PORT="${DSH_DEV_PORT:-8091}"
-DSH_PM_PORT="${DSH_PM_PORT:-8093}"
-BROWSERLESS_PORT="${BROWSERLESS_PORT:-3001}"
+DSH_RELAY_PORT="${DSH_RELAY_PORT:-3443}"
+BROWSERLESS_PORT="${BROWSERLESS_PORT:-3000}"
 
 echo "== 容器 =="
 docker compose ps
 
 echo
 echo "== 端口探活（本机回环） =="
-printf 'echuan    127.0.0.1:%s  readyz=%s\n' "$ECHUAN_PORT" "$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:${ECHUAN_PORT}/readyz" || echo 000)"
-printf 'cto-agent 127.0.0.1:%s  http=%s\n'   "$DSH_CTO_PORT" "$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:${DSH_CTO_PORT}/" || echo 000)"
-printf 'dev-agent 127.0.0.1:%s  http=%s\n'   "$DSH_DEV_PORT" "$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:${DSH_DEV_PORT}/" || echo 000)"
-printf 'pm-agent  127.0.0.1:%s  http=%s\n'   "$DSH_PM_PORT" "$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:${DSH_PM_PORT}/" || echo 000)"
+printf 'echuan      127.0.0.1:%s  readyz=%s\n' "$ECHUAN_PORT" "$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:${ECHUAN_PORT}/readyz" || echo 000)"
+printf 'dsh-agent   127.0.0.1:%s  relay/health=%s\n' "$DSH_RELAY_PORT" "$(curl -sk -o /dev/null -w '%{http_code}' "https://127.0.0.1:${DSH_RELAY_PORT}/relay/health" || echo 000)"
 
 # browserless 所有端点都鉴权；未配置 token 时只提示，不算失败。
 if [ -n "${BROWSERLESS_TOKEN:-}" ]; then
