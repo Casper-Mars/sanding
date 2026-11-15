@@ -62,7 +62,11 @@
     bind: '0.0.0.0'
     port: 3443
     tls: self-signed
-    publicHostnames: []
+    # 手机经 xedge 组网访问时，Host 头是 xedge 分配的地址（utun 100.64.0.x）。
+    # relay 的 fence 只放行 loopback + 这里列出的 authority，否则直接 403
+    # untrusted-host。不带端口 = 该主机名任意端口都匹配。
+    publicHostnames:
+      - 100.64.0.1
     compat:
       addressGrants: true
       addressGrantTtlMs: 86400000
