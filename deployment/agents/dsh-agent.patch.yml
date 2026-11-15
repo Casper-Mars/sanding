@@ -27,11 +27,18 @@
       poll:
         enable: true # 默认关闭；打开才会定时心跳
       kinds:
-        # 合并 Host 承接全部任务类型；角色由平台侧的 kind → preset 映射决定
+        # 合并 Host 承接全部任务类型；能领什么由这份声明决定
         - requirement
         - design
         - breakdown
         - dev
+      presetByKind:
+        # 角色路由在 worker 侧（kit 配置）：新增角色只改这里 + 在 Host 装好 preset，
+        # 平台代码与派单契约都不需要动
+        requirement: pm
+        design: cto
+        breakdown: cto
+        dev: dev-leader
       metadata:
         # 原样上报，序列化后 ≤8KiB
         host: build-01

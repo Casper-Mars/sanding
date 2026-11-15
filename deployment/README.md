@@ -27,7 +27,7 @@
 - 启动顺序：两个 agent `depends_on` 等 `echuan` healthy。
 - 对外入口只有 `dsh-relay`（见第 6 节）；`dsh-portal`（Caddy）已删除——它没有认证，且 relay 能直接干这件事。
 - `dsh-agent` 是 V3 的唯一运行形态：三个角色包装进同一个 profile，技能在各自 preset 层、
-  persona 按 preset id 门控；派单由平台下发 `agent_preset`，kit 按 `项目号:preset` 建会话。
+  persona 按 preset id 门控；派单只下发 `kind`；kit 按本机 `worker.presetByKind` 解析 preset，再按 `项目号:preset` 建会话。
 - 旧三台（`cto-agent` / `pm-agent` / `dev-agent`）在 compose 里**整段注释停用**——它们仍会向
   同一个平台声明 kinds，一启动就抢卡（实测 requirement 卡被旧 worker 领走）。回退时把注释去掉，
   `docker compose up -d cto-agent pm-agent dev-agent`。
