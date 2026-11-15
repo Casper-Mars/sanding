@@ -26,15 +26,10 @@
     worker:
       poll:
         enable: true # 默认关闭；打开才会定时心跳
-      kinds:
-        # 合并 Host 承接全部任务类型；能领什么由这份声明决定
-        - requirement
-        - design
-        - breakdown
-        - dev
+      # kind → preset 一项配置同时声明「能领什么卡」与「挂哪个角色」：
+      # 键即 kinds，值即 preset。新增角色只改这里 + 在 Host 装好 preset，
+      # 平台代码与派单契约都不需要动。
       presetByKind:
-        # 角色路由在 worker 侧（kit 配置）：新增角色只改这里 + 在 Host 装好 preset，
-        # 平台代码与派单契约都不需要动
         requirement: pm
         design: cto
         breakdown: cto
