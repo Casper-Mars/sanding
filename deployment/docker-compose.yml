@@ -214,7 +214,6 @@ services:
       # 部署补丁层：registry.default=cto，并声明 worker 的 presetByKind
       - "./agents/dsh-agent.patch.yml:/home/node/.dsh/cordis.patch.yml:ro"
       # 验收脚本（只读）：docker compose exec dsh-agent node /opt/verify-presets.mjs
-      - "../scripts/verify-presets.mjs:/opt/verify-presets.mjs:ro"
     security_opt: *agent-security-opt
     cap_add: *agent-cap
     environment:
@@ -265,7 +264,6 @@ services:
       - "${HOST_PROJECT_PATH:?请在 .env 中设置项目绝对路径}:/workspace"
       - "${DSH_ONE_HOME_DIR:-./data/dsh-home-one}:/home/node/.dsh"
       - "./agents/dsh-agent-one.patch.yml:/home/node/.dsh/cordis.patch.yml:ro"
-      - "../scripts/verify-presets.mjs:/opt/verify-presets.mjs:ro"
     security_opt: *agent-security-opt
     cap_add: *agent-cap
     environment:
