@@ -215,7 +215,7 @@ services:
     cap_add: *agent-cap
     environment:
       <<: *agent-env
-      PLUGIN_SPECS: ${DSH_MERGED_PLUGIN_SPECS:-dsh-agent-cto@0.7.0 dsh-agent-pm@0.7.0 dsh-agent-dev@0.8.0 dsh-echuan@0.4.1 dsh-agent-base@0.2.0 dsh-browser-native@0.1.0 dsh-local-admission@0.1.1 dsh-relay@0.4.0}
+      PLUGIN_SPECS: ${DSH_MERGED_PLUGIN_SPECS:-dsh-agent-cto@0.7.0 dsh-agent-pm@0.7.0 dsh-agent-dev@0.8.1 dsh-echuan@0.4.1 dsh-agent-base@0.2.0 dsh-browser-native@0.1.0 dsh-local-admission@0.1.1 dsh-relay@0.4.0}
       # harness 只监听回环，对外只暴露 dsh-relay（TLS + 密码 + 设备配对）
       DSH_BIND_HOST: loopback
       DSH_RELAY_PORT: "3443"
