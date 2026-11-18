@@ -62,7 +62,7 @@ fi
 
 echo "== 4. worker 注册 =="
 if curl -s "http://127.0.0.1:${ECHUAN_PORT}/v1/workers" \
-  | python3 "$(dirname "$0")/workers.py" --require-active core; then
+  | python3 "$(dirname "$0")/workers.py" --require-active; then
   :
 else
   fail=$((fail + 1))
