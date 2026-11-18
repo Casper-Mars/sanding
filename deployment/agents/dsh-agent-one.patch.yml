@@ -1,0 +1,29 @@
+# dsh-agent-one 部署补丁：一体化项目主智能体（preset: one）
+#
+# 与 dsh-agent 隔离：独立 profile、独立 echuan-one 平台、独立 relay 端口。
+# 会话键 = 项目号（一个项目一个会话）；所有 kind 都投给 one preset。
+- id: agent-preset-registry
+  config:
+    default: one
+
+- id: echuan
+  config:
+    baseUrl: http://echuan-one:8720
+    actor: agent_core:echuan-one
+    requestTimeoutMs: 35000
+    exclude: []
+    worker:
+      poll:
+        enable: true
+      presetByKind:
+        requirement: one
+        design: one
+        breakdown: one
+        dev: one
+      # 一个项目一个会话：主 agent 持有项目全貌，角色差异交给子智能体 preset
+      sessionKey: project
+      metadata:
+        host: one-01
+        os: darwin
+        agent_version: 0.1.0
+        name: one

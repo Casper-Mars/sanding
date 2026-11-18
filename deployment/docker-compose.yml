@@ -43,9 +43,9 @@ x-agent-env: &agent-env
   HOST_PROJECT_PATH: ${HOST_PROJECT_PATH:?请在 .env 中设置项目绝对路径}
   # 内网 / 宿主地址一律直连：驿传平台在宿主 127.0.0.1:8721（仅回环发布），
   # 只能经 host.docker.internal 访问，不能过代理。
-  NO_PROXY: localhost,127.0.0.1,::1,host.docker.internal,192.168.65.254,echuan,browserless,dsh-agent
+  NO_PROXY: localhost,127.0.0.1,::1,host.docker.internal,192.168.65.254,echuan,echuan-one,browserless,dsh-agent,dsh-agent-one
   DSH_BROWSER_CDP_URL: "ws://host.docker.internal:${BROWSERLESS_PORT:-3000}/?token=${BROWSERLESS_TOKEN}&--no-proxy-server"
-  no_proxy: localhost,127.0.0.1,::1,host.docker.internal,192.168.65.254,echuan,browserless,dsh-agent
+  no_proxy: localhost,127.0.0.1,::1,host.docker.internal,192.168.65.254,echuan,echuan-one,browserless,dsh-agent,dsh-agent-one
   NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmmirror.com}
   # GitHub PAT（.env 里配置；留空 = 容器内 gh 未登录）
   GH_PAT_TOKEN: ${GH_TOKEN:-}
@@ -156,8 +156,8 @@ services:
       TIMEOUT: ${BROWSERLESS_TIMEOUT:-60000}
       TZ: ${TZ:-Asia/Shanghai}
       # Chrome 在容器里必须直连内网，不能走宿主代理；--no-proxy-server 由 CDP URL 传入。
-      NO_PROXY: "localhost,127.0.0.1,::1,host.docker.internal,echuan,browserless,dsh-agent"
-      no_proxy: "localhost,127.0.0.1,::1,host.docker.internal,echuan,browserless,dsh-agent"
+      NO_PROXY: "localhost,127.0.0.1,::1,host.docker.internal,echuan,echuan-one,browserless,dsh-agent,dsh-agent-one"
+      no_proxy: "localhost,127.0.0.1,::1,host.docker.internal,echuan,echuan-one,browserless,dsh-agent,dsh-agent-one"
     shm_size: "${BROWSERLESS_SHM_SIZE:-2g}"
     volumes:
       # 浏览器用户数据 / 下载 / 指标落盘，删容器不丢
@@ -177,6 +177,51 @@ services:
       timeout: 10s
       retries: 5
       start_period: 20s
+
+  # ── 一体化测试平台（与主线隔离）────────────────────────────────────────────
+  # 独立数据库 + 独立端口；IM 关闭，避免测试卡片打到真实群。
+  echuan-one:
+    image: ${ECHUAN_IMAGE:-echuan:local}
+    container_name: ${ECHUAN_ONE_CONTAINER_NAME:-echuan-one}
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${ECHUAN_ONE_PORT:-8722}:8720"
+    user: "${ECHUAN_UID:-10001}:${ECHUAN_GID:-10001}"
+    environment:
+      TZ: ${TZ:-Asia/Shanghai}
+      ECHUAN_LOG_LEVEL: ${ECHUAN_LOG_LEVEL:-}
+      ECHUAN_IM_ENABLED: "false"
+    volumes:
+      - "${ECHUAN_ONE_DATA_DIR:-./echuan-one/data}:/data"
+      - "${ECHUAN_CONFIG_FILE:-./echuan/echuan.container.toml}:/etc/echuan/echuan.toml:ro"
+    networks:
+      - sanding
+    logging: *default-logging
+    healthcheck:
+      test:
+        - CMD
+        - env
+        - -u
+        - HTTP_PROXY
+        - -u
+        - HTTPS_PROXY
+        - -u
+        - ALL_PROXY
+        - -u
+        - http_proxy
+        - -u
+        - https_proxy
+        - -u
+        - all_proxy
+        - wget
+        - -q
+        - -O
+        - /dev/null
+        - http://127.0.0.1:8720/readyz
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 15s
 
   # ── 合并 Host（单 Host 多角色）─────────────────────────────────────────────
   # 三个角色包装进同一个 profile：技能在各自 preset 层、persona 按 preset id 门控。
@@ -235,6 +280,53 @@ services:
       - sanding
     logging: *default-logging
     # harness 绑回环后，探针必须走 127.0.0.1（探容器 eth0 IP 会一直失败）
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          node -e "require('http').get({host:'127.0.0.1',port:3080,path:'/'},r=>{r.resume();process.exit(0)}).on('error',()=>process.exit(1))"
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 90s
+
+  # ── 一体化主智能体 Host（测试）─────────────────────────────────────────────
+  # 一个项目一个会话；主 agent 通过 delegate/send_message 复用 pm/cto/dev 子智能体。
+  # 与主线完全隔离：独立 profile、独立 relay 端口、独立 echuan-one。
+  dsh-agent-one:
+    image: ${DSH_MERGED_IMAGE:-dsh-agent-dev:local}
+    container_name: ${DSH_ONE_CONTAINER_NAME:-dsh-agent-one}
+    restart: unless-stopped
+    depends_on:
+      echuan-one:
+        condition: service_healthy
+      browserless:
+        condition: service_healthy
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "${DSH_ONE_RELAY_BIND:-0.0.0.0}:${DSH_ONE_RELAY_PORT:-3444}:3443"
+    volumes:
+      - "${HOST_PROJECT_PATH:?请在 .env 中设置项目绝对路径}:/workspace"
+      - "${DSH_ONE_HOME_DIR:-./data/dsh-home-one}:/home/node/.dsh"
+      - "./agents/dsh-agent-one.patch.yml:/home/node/.dsh/cordis.patch.yml:ro"
+      - "../scripts/verify-presets.mjs:/opt/verify-presets.mjs:ro"
+    security_opt: *agent-security-opt
+    cap_add: *agent-cap
+    environment:
+      <<: *agent-env
+      PLUGIN_SPECS: ${DSH_ONE_PLUGIN_SPECS:-dsh-agent-one@0.1.0 dsh-agent-cto@0.7.1 dsh-agent-pm@0.7.1 dsh-agent-dev@0.8.3 dsh-echuan@0.5.2 dsh-agent-base@0.2.0 dsh-browser-native@0.1.0 dsh-local-admission@0.1.1 dsh-relay@0.4.0}
+      DSH_BIND_HOST: loopback
+      DSH_RELAY_PORT: "3443"
+      HTTP_PROXY: ${DOCKER_PROXY:-}
+      HTTPS_PROXY: ${DOCKER_PROXY:-}
+      ALL_PROXY: ${DOCKER_PROXY:-}
+      http_proxy: ${DOCKER_PROXY:-}
+      https_proxy: ${DOCKER_PROXY:-}
+      all_proxy: ${DOCKER_PROXY:-}
+    networks:
+      - sanding
+    logging: *default-logging
     healthcheck:
       test:
         - CMD-SHELL
