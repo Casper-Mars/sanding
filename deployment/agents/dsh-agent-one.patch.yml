@@ -10,7 +10,7 @@
 - id: echuan
   config:
     baseUrl: http://echuan:8720
-    actor: agent_core:echuan-one
+    actor: agent_core:one
     requestTimeoutMs: 35000
     exclude: []
     worker:
@@ -26,5 +26,5 @@
       metadata:
         host: one-01
         os: darwin
-        agent_version: 0.2.0
+        agent_version: 0.2.1
         name: one
