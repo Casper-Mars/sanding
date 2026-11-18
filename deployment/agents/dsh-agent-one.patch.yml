@@ -1,20 +1,21 @@
-# dsh-agent-one 部署补丁：一体化项目主智能体（preset: one）
+# dsh-agent-one 部署补丁：一体化主智能体（自包含 pm/cto/dev）
 #
-# 与 dsh-agent 隔离：独立 profile、独立 echuan-one 平台、独立 relay 端口。
-# 会话键 = 项目号（一个项目一个会话）；所有 kind 都投给 one preset。
+# 复用现有 echuan 平台，不另起平台；profile 独立、relay 端口独立。
+# worker.poll 默认关闭：dsh-agent 与 one 声明同样的 kinds，同时开心跳会抢卡。
+# 测试派单流程时，先暂停 dsh-agent，再把下面的 poll.enable 改成 true。
 - id: agent-preset-registry
   config:
     default: one
 
 - id: echuan
   config:
-    baseUrl: http://echuan-one:8720
+    baseUrl: http://echuan:8720
     actor: agent_core:echuan-one
     requestTimeoutMs: 35000
     exclude: []
     worker:
       poll:
-        enable: true
+        enable: false
       presetByKind:
         requirement: one
         design: one
@@ -25,5 +26,5 @@
       metadata:
         host: one-01
         os: darwin
-        agent_version: 0.1.0
+        agent_version: 0.2.0
         name: one
