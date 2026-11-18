@@ -43,8 +43,9 @@ x-agent-env: &agent-env
   HOST_PROJECT_PATH: ${HOST_PROJECT_PATH:?请在 .env 中设置项目绝对路径}
   # 内网 / 宿主地址一律直连：驿传平台在宿主 127.0.0.1:8721（仅回环发布），
   # 只能经 host.docker.internal 访问，不能过代理。
-  NO_PROXY: localhost,127.0.0.1,::1,host.docker.internal,192.168.65.254,echuan
-  no_proxy: localhost,127.0.0.1,::1,host.docker.internal,192.168.65.254,echuan
+  NO_PROXY: localhost,127.0.0.1,::1,host.docker.internal,192.168.65.254,echuan,browserless,dsh-agent
+  DSH_BROWSER_CDP_URL: "ws://host.docker.internal:${BROWSERLESS_PORT:-3000}/?token=${BROWSERLESS_TOKEN}&--no-proxy-server"
+  no_proxy: localhost,127.0.0.1,::1,host.docker.internal,192.168.65.254,echuan,browserless,dsh-agent
   NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmmirror.com}
   # GitHub PAT（.env 里配置；留空 = 容器内 gh 未登录）
   GH_PAT_TOKEN: ${GH_TOKEN:-}
@@ -154,6 +155,9 @@ services:
       QUEUED: ${BROWSERLESS_QUEUED:-5}
       TIMEOUT: ${BROWSERLESS_TIMEOUT:-60000}
       TZ: ${TZ:-Asia/Shanghai}
+      # Chrome 在容器里必须直连内网，不能走宿主代理；--no-proxy-server 由 CDP URL 传入。
+      NO_PROXY: "localhost,127.0.0.1,::1,host.docker.internal,echuan,browserless,dsh-agent"
+      no_proxy: "localhost,127.0.0.1,::1,host.docker.internal,echuan,browserless,dsh-agent"
     shm_size: "${BROWSERLESS_SHM_SIZE:-2g}"
     volumes:
       # 浏览器用户数据 / 下载 / 指标落盘，删容器不丢
@@ -215,7 +219,7 @@ services:
     cap_add: *agent-cap
     environment:
       <<: *agent-env
-      PLUGIN_SPECS: ${DSH_MERGED_PLUGIN_SPECS:-dsh-agent-cto@0.7.0 dsh-agent-pm@0.7.0 dsh-agent-dev@0.8.1 dsh-echuan@0.5.1 dsh-agent-base@0.2.0 dsh-browser-native@0.1.0 dsh-local-admission@0.1.1 dsh-relay@0.4.0}
+      PLUGIN_SPECS: ${DSH_MERGED_PLUGIN_SPECS:-dsh-agent-cto@0.7.1 dsh-agent-pm@0.7.1 dsh-agent-dev@0.8.2 dsh-echuan@0.5.1 dsh-agent-base@0.2.0 dsh-browser-native@0.1.0 dsh-local-admission@0.1.1 dsh-relay@0.4.0}
       # harness 只监听回环，对外只暴露 dsh-relay（TLS + 密码 + 设备配对）
       DSH_BIND_HOST: loopback
       DSH_RELAY_PORT: "3443"

@@ -48,7 +48,7 @@
 
 - id: dsh-browser-native
   config:
-    cdpUrl: "ws://host.docker.internal:3000/?token=test-token"
+    cdpUrl: "ws://host.docker.internal:3000/?token=test-token&--no-proxy-server"
     headless: false
 
 # dsh-relay：bundle 层（包自带）已 insert id=relay，这里只做 config 覆盖。
