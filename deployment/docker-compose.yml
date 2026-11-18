@@ -315,7 +315,7 @@ services:
     cap_add: *agent-cap
     environment:
       <<: *agent-env
-      PLUGIN_SPECS: ${DSH_ONE_PLUGIN_SPECS:-dsh-agent-one@0.1.0 dsh-agent-cto@0.7.1 dsh-agent-pm@0.7.1 dsh-agent-dev@0.8.3 dsh-echuan@0.5.2 dsh-agent-base@0.2.0 dsh-browser-native@0.1.0 dsh-local-admission@0.1.1 dsh-relay@0.4.0}
+      PLUGIN_SPECS: ${DSH_ONE_PLUGIN_SPECS:-dsh-agent-one@0.1.1 dsh-agent-cto@0.7.1 dsh-agent-pm@0.7.1 dsh-agent-dev@0.8.3 dsh-echuan@0.5.2 dsh-agent-base@0.2.0 dsh-browser-native@0.1.0 dsh-local-admission@0.1.1 dsh-relay@0.4.0}
       DSH_BIND_HOST: loopback
       DSH_RELAY_PORT: "3443"
       HTTP_PROXY: ${DOCKER_PROXY:-}
