@@ -17,7 +17,8 @@
 #   ./scripts/smoke-test.sh        # 冒烟
 #   ./scripts/down.sh              # 停止（数据保留）
 #
-# 端口约定：echuan 与 browserless 只绑 127.0.0.1；对外入口只有 dsh-relay:3443。
+# 端口约定：echuan 绑 127.0.0.1 + xedge 隧道地址（ECHUAN_BIND / ECHUAN_BIND_ALT）；
+# browserless 只绑 127.0.0.1；agent 对外入口只有 dsh-relay:3443。
 
 name: ${COMPOSE_PROJECT_NAME:-sanding}
 
@@ -85,6 +86,8 @@ services:
     # ECHUAN_BIND 默认回环；需要手机经 xedge 访问时设为 100.64.0.1（只对该 overlay 暴露）
     ports:
       - "${ECHUAN_BIND:-127.0.0.1}:${ECHUAN_PORT:-8721}:8720"
+      # 第二个宿主地址（默认 xedge 隧道），让手机与本地同时可达
+      - "${ECHUAN_BIND_ALT:-100.64.0.1}:${ECHUAN_PORT:-8721}:8720"
 
     # 默认 UID/GID 10001；Linux 宿主机请让数据目录属主与其一致。
     user: "${ECHUAN_UID:-10001}:${ECHUAN_GID:-10001}"
