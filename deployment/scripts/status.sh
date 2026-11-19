@@ -8,6 +8,7 @@ cd "$(dirname "$0")/.."
 set -a; . ./.env; set +a
 
 ECHUAN_PORT="${ECHUAN_PORT:-8721}"
+ECHUAN_HOST="${ECHUAN_BIND:-127.0.0.1}"
 DSH_RELAY_PORT="${DSH_RELAY_PORT:-3443}"
 BROWSERLESS_PORT="${BROWSERLESS_PORT:-3000}"
 
@@ -15,8 +16,8 @@ echo "== 容器 =="
 docker compose ps
 
 echo
-echo "== 端口探活（本机回环） =="
-printf 'echuan      127.0.0.1:%s  readyz=%s\n' "$ECHUAN_PORT" "$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:${ECHUAN_PORT}/readyz" || echo 000)"
+echo "== 端口探活 =="
+printf 'echuan      %s:%s  readyz=%s\n' "$ECHUAN_HOST" "$ECHUAN_PORT" "$(curl -s -o /dev/null -w '%{http_code}' "http://${ECHUAN_HOST}:${ECHUAN_PORT}/readyz" || echo 000)"
 printf 'dsh-agent   127.0.0.1:%s  relay/health=%s\n' "$DSH_RELAY_PORT" "$(curl -sk -o /dev/null -w '%{http_code}' "https://127.0.0.1:${DSH_RELAY_PORT}/relay/health" || echo 000)"
 
 # browserless 所有端点都鉴权；未配置 token 时只提示，不算失败。
@@ -33,5 +34,5 @@ fi
 
 echo
 echo "== 已注册 worker =="
-curl -s "http://127.0.0.1:${ECHUAN_PORT}/v1/workers" | python3 "$(dirname "$0")/workers.py" \
+curl -s "http://${ECHUAN_HOST}:${ECHUAN_PORT}/v1/workers" | python3 "$(dirname "$0")/workers.py" \
   || echo "  (查询失败：驿传未就绪?)"

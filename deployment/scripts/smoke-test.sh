@@ -11,6 +11,7 @@ cd "$(dirname "$0")/.."
 set -a; . ./.env; set +a
 
 ECHUAN_PORT="${ECHUAN_PORT:-8721}"
+ECHUAN_HOST="${ECHUAN_BIND:-127.0.0.1}"
 DSH_RELAY_PORT="${DSH_RELAY_PORT:-3443}"
 BROWSERLESS_PORT="${BROWSERLESS_PORT:-3000}"
 
@@ -19,7 +20,7 @@ ok()   { printf '  ✅ %s\n' "$*"; }
 bad()  { printf '  ❌ %s\n' "$*"; fail=$((fail + 1)); }
 
 echo "== 1. 驿传平台 =="
-code=$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:${ECHUAN_PORT}/readyz" || echo 000)
+code=$(curl -s -o /dev/null -w '%{http_code}' "http://${ECHUAN_HOST}:${ECHUAN_PORT}/readyz" || echo 000)
 [ "$code" = "200" ] && ok "GET /readyz → 200" || bad "GET /readyz → $code"
 
 echo "== 2. dsh-agent（dsh-relay） =="
@@ -61,7 +62,7 @@ else
 fi
 
 echo "== 4. worker 注册 =="
-if curl -s "http://127.0.0.1:${ECHUAN_PORT}/v1/workers" \
+if curl -s "http://${ECHUAN_HOST}:${ECHUAN_PORT}/v1/workers" \
   | python3 "$(dirname "$0")/workers.py" --require-active; then
   :
 else
