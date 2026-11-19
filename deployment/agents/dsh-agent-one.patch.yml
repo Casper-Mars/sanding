@@ -1,8 +1,8 @@
 # dsh-agent-one 部署补丁：一体化主智能体（自包含 pm/cto/dev）
 #
 # 复用现有 echuan 平台，不另起平台；profile 独立、relay 端口独立。
-# worker.poll 默认关闭：dsh-agent 与 one 声明同样的 kinds，同时开心跳会抢卡。
-# 测试派单流程时，先暂停 dsh-agent，再把下面的 poll.enable 改成 true。
+# worker.poll 开启：dsh-agent 与 one 声明同样的 kinds，同时开心跳会抢卡，
+# 所以本机唯一领卡方是 one（dsh-agent 的 poll 已关闭）。
 - id: agent-preset-registry
   config:
     default: one
@@ -15,7 +15,7 @@
     exclude: []
     worker:
       poll:
-        enable: false
+        enable: true
       presetByKind:
         requirement: one
         design: one

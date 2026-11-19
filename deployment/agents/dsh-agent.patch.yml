@@ -25,7 +25,7 @@
     exclude: [] # 不注册的工具名；默认 [] = 全量 23 个
     worker:
       poll:
-        enable: true # 默认关闭；打开才会定时心跳
+        enable: false # 本机 worker 停止轮询，改由 dsh-agent-one 领卡
       # kind → preset 一项配置同时声明「能领什么卡」与「挂哪个角色」：
       # 键即 kinds，值即 preset。新增角色只改这里 + 在 Host 装好 preset，
       # 平台代码与派单契约都不需要动。
