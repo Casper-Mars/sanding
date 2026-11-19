@@ -99,9 +99,7 @@ echuan 的容器配置**归部署侧所有**：`deployment/echuan/echuan.contain
 
   ```bash
   ./scripts/relay-password.sh                      # 合并 Host（dsh-agent）
-  ./scripts/relay-password.sh --one                # 一体化主智能体（dsh-agent-one）
   ./scripts/relay-password.sh --container dsh-xxx  # 任意容器
-  ./scripts/relay-password.sh --one 'xxxxxxx'      # 显式传入（≥10 字符）
   ```
   不给密码时读 `.env` 的 `DSH_RELAY_PASSWORD`，两个 relay 共用同一个密码。
 
