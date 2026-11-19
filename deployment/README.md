@@ -98,9 +98,12 @@ echuan 的容器配置**归部署侧所有**：`deployment/echuan/echuan.contain
 - **设 / 改密码**（relay 只接受「运行 harness 的机器」设密码，容器化后就是容器本身）：
 
   ```bash
-  ./scripts/relay-password.sh            # 读 .env 的 DSH_RELAY_PASSWORD
-  ./scripts/relay-password.sh 'xxxxxxx'  # 或显式传入（≥10 字符）
+  ./scripts/relay-password.sh                      # 合并 Host（dsh-agent）
+  ./scripts/relay-password.sh --one                # 一体化主智能体（dsh-agent-one）
+  ./scripts/relay-password.sh --container dsh-xxx  # 任意容器
+  ./scripts/relay-password.sh --one 'xxxxxxx'      # 显式传入（≥10 字符）
   ```
+  不给密码时读 `.env` 的 `DSH_RELAY_PASSWORD`，两个 relay 共用同一个密码。
 
 - **配对设备**：本机打开 `https://127.0.0.1:3443/relay/pair`（自签证书点「继续」），手机扫码或输 8 位码。
 - 自签证书、已配对设备在 `data/dsh-home-agent/relay/`，重建容器不丢。

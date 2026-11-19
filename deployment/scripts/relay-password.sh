@@ -7,8 +7,14 @@
 # 本脚本从容器内 loopback 发起，因此始终被认作 operator。
 #
 # 用法：
-#   ./scripts/relay-password.sh                # 读 .env 的 DSH_RELAY_PASSWORD
-#   ./scripts/relay-password.sh 'my-password'  # 或命令行显式给（≥10 字符）
+#   ./scripts/relay-password.sh                      # 合并 Host（dsh-agent）
+#   ./scripts/relay-password.sh --one                # 一体化主智能体（dsh-agent-one）
+#   ./scripts/relay-password.sh --container dsh-xxx  # 指定任意容器
+#   ./scripts/relay-password.sh --one 'my-password'  # 显式给密码（≥10 字符）
+#
+# 不给密码时读 .env 的 DSH_RELAY_PASSWORD；容器名默认取 .env 的
+# DSH_MERGED_CONTAINER_NAME / DSH_ONE_CONTAINER_NAME，再回落固定值。
+# 环境变量 RELAY_CONTAINER 仍可覆盖默认容器。
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -18,14 +24,51 @@ read_env() {
   sed -n "s/^$1=//p" .env | tail -1 | sed -e 's/^"//' -e 's/"$//' -e "s/^'//" -e "s/'$//"
 }
 
+usage() {
+  sed -n '2,17p' "$0" | sed -e 's/^# \{0,1\}//'
+}
+
+CN=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --one)
+      CN="$(read_env DSH_ONE_CONTAINER_NAME)"
+      CN="${CN:-dsh-agent-one}"
+      shift
+      ;;
+    --container|-c)
+      [ $# -ge 2 ] || { echo "错误：$1 需要一个容器名" >&2; exit 1; }
+      CN="$2"
+      shift 2
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    -*)
+      echo "错误：未知选项 $1（-h 看用法）" >&2
+      exit 1
+      ;;
+    *)
+      break
+      ;;
+  esac
+done
+
 PW="${1:-$(read_env DSH_RELAY_PASSWORD)}"
-[ -n "$PW" ] || { echo "错误：未提供密码（.env 的 DSH_RELAY_PASSWORD，或第一个参数）" >&2; exit 1; }
+[ -n "$PW" ] || { echo "错误：未提供密码（.env 的 DSH_RELAY_PASSWORD，或最后一个参数）" >&2; exit 1; }
 [ "${#PW}" -ge 10 ] || { echo "错误：relay 要求密码至少 10 个字符（当前 ${#PW}）" >&2; exit 1; }
 
-# 默认目标是合并 Host（dsh-agent）；要改到别的 Host 用 RELAY_CONTAINER 覆盖
-CN="${RELAY_CONTAINER:-$(read_env DSH_MERGED_CONTAINER_NAME)}"
-CN="${CN:-dsh-agent}"
+if [ -z "$CN" ]; then
+  CN="${RELAY_CONTAINER:-$(read_env DSH_MERGED_CONTAINER_NAME)}"
+  CN="${CN:-dsh-agent}"
+fi
 
+# 容器不在跑就没必要继续（docker compose exec 会报难看的长错）
+docker compose ps --status running --format '{{.Name}}' | grep -qx "$CN" \
+  || { echo "错误：容器 $CN 不在运行（docker compose ps 看一眼）" >&2; exit 1; }
+
+echo "目标容器：$CN"
 code="$(docker compose exec -T "$CN" \
   curl -k -s -o /dev/null -w '%{http_code}' \
   -X POST --data-urlencode "password=$PW" https://127.0.0.1:3443/relay/password)"
