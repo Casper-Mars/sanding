@@ -28,3 +28,19 @@
         os: darwin
         agent_version: 0.2.1
         name: one
+
+# dsh-relay：bundle 层已有 insert id=relay，这里只做 config 覆盖（会整行替换 config，
+# 需要的字段必须全部重述）。手机经 xedge 组网访问时 Host 头是 100.64.0.1，
+# relay 的 fence 只放行 loopback + publicHostnames，否则 403 untrusted-host。
+- id: relay
+  config:
+    stateDir: !!js dshHomePath('relay')
+    bind: '0.0.0.0'
+    port: 3443
+    tls: self-signed
+    publicHostnames:
+      - 100.64.0.1
+    compat:
+      addressGrants: true
+      addressGrantTtlMs: 86400000
+      plainPort: 0
