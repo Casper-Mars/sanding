@@ -33,6 +33,15 @@ else
 fi
 
 echo
+echo "== GitHub webhook 中继 =="
+SMEE_NAME="${SMEE_CONTAINER_NAME:-dsh-smee}"
+if docker ps --format '{{.Names}}' | grep -qx "$SMEE_NAME"; then
+  printf 'smee        %s  %s\n' "$SMEE_NAME" "$(docker logs --tail 1 "$SMEE_NAME" 2>&1 | tail -1)"
+else
+  printf 'smee        未运行 —— GitHub webhook 不会送达 dsh-agent:/github\n'
+fi
+
+echo
 echo "== 已注册 worker =="
 curl -s "http://${ECHUAN_HOST}:${ECHUAN_PORT}/v1/workers" | python3 "$(dirname "$0")/workers.py" \
   || echo "  (查询失败：驿传未就绪?)"

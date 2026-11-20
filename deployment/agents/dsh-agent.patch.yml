@@ -71,3 +71,37 @@
       addressGrants: true
       addressGrantTtlMs: 86400000
       plainPort: 0
+
+# ── GitHub webhook 事件接入（repo-ops）──────────────────────────────────────
+#
+# 链路：GitHub → smee.io/<channel> → smee-client（与 dsh-agent 同 netns）
+#      → 127.0.0.1:3080/github → dsh-webhook-github 验签 → 本规则的 run()
+#      → 新建 agentPreset=pm 的会话（cwd = /workspace/repo-ops）
+#
+# 说明：
+# - 不挂第二个 dsh-host-webserver：harness 只绑回环，smee-client 用
+#   `network_mode: service:dsh-agent` 共享网络命名空间即可直达 /github，
+#   既不用对外开端口，也不会触发 relay 的「webserver 监听网络地址」拒启。
+# - secret 走 dsh-credentials 的 env 回落：容器里 DSH_GITHUB_WEBHOOK_SECRET
+#   与会话存储里的同名 key 等价，验签每次请求现取，改 .env 重启即可轮换。
+- insert:
+    - id: webhook-runtime
+      name: '@deepseek-ai/dsh-webhook'
+
+    - id: github-repo-ops-rule
+      name: './profiles/web/webhook/repo-ops-rule.mjs'
+      config:
+        source: primary-github
+        workspacePath: /workspace/repo-ops
+        agentPreset: pm
+        permissionPreset: workspace-write
+        # 空数组 = 不按仓库过滤（只有你配了 webhook 的仓库才会推事件）
+        repositories: []
+
+    - id: github-webhook-adapter
+      name: '@deepseek-ai/dsh-webhook-github'
+      config:
+        source: primary-github
+        path: /github
+        secretEnv: DSH_GITHUB_WEBHOOK_SECRET
+        maxBodyBytes: 1048576

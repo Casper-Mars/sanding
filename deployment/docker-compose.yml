@@ -6,6 +6,7 @@
 #               装进同一个 profile，技能按 preset 隔离；对外只经运行期安装的
 #               dsh-relay（TLS + 密码 + 设备配对），harness 本身只绑回环
 #   browserless 无头 Chromium：供 agent / 客户端经 CDP(WS) 或 HTTP 调用
+#   smee         smee.io 中继客户端：把 GitHub webhook 送进 dsh-agent 的 /github
 #
 # 浏览器：0.2.0 起直接用官方镜像 ghcr.io/browserless/chromium，不加载 extension。
 # 插件：一律不挂宿主目录，启动时按 PLUGIN_SPECS 从 npm registry 安装。
@@ -217,15 +218,19 @@ services:
       - "${DSH_MERGED_HOME_DIR:-./data/dsh-home-agent}:/home/node/.dsh"
       # 部署补丁层：registry.default=cto，并声明 worker 的 presetByKind
       - "./agents/dsh-agent.patch.yml:/home/node/.dsh/cordis.patch.yml:ro"
+      # webhook 规则模块（home patch 里以 ./profiles/web/webhook/... 引用）
+      - "./agents/webhook:/home/node/.dsh/profiles/web/webhook:ro"
       # 验收脚本（只读）：docker compose exec dsh-agent node /opt/verify-presets.mjs
     security_opt: *agent-security-opt
     cap_add: *agent-cap
     environment:
       <<: *agent-env
-      PLUGIN_SPECS: ${DSH_MERGED_PLUGIN_SPECS:-dsh-agent-cto@0.7.1 dsh-agent-pm@0.7.1 dsh-agent-dev@0.8.2 dsh-echuan@0.5.1 dsh-agent-base@0.2.0 dsh-browser-native@0.1.0 dsh-local-admission@0.1.1 dsh-relay@0.4.0}
+      PLUGIN_SPECS: ${DSH_MERGED_PLUGIN_SPECS:-dsh-agent-cto@0.7.1 dsh-agent-pm@0.7.1 dsh-agent-dev@0.8.2 dsh-echuan@0.5.1 dsh-agent-base@0.2.0 dsh-browser-native@0.1.0 dsh-local-admission@0.1.1 dsh-relay@0.4.0 @deepseek-ai/dsh-webhook@0.2.1-rc.2 @deepseek-ai/dsh-webhook-github@0.2.1-rc.2}
       # harness 只监听回环，对外只暴露 dsh-relay（TLS + 密码 + 设备配对）
       DSH_BIND_HOST: loopback
       DSH_RELAY_PORT: "3443"
+      # GitHub webhook HMAC secret：dsh-webhook-github 按名字解析（env 回落）
+      DSH_GITHUB_WEBHOOK_SECRET: ${DSH_GITHUB_WEBHOOK_SECRET:-}
       # 大小写代理变量必须成对覆盖：插件 HTTP 客户端读小写变量，
       # 注入的宿主代理会把访问驿传平台的请求转走 → 502。
       HTTP_PROXY: ${DOCKER_PROXY:-}
@@ -248,6 +253,29 @@ services:
       retries: 5
       start_period: 90s
 
+
+  # ── smee.io 中继客户端 ────────────────────────────────────────────────────
+  # GitHub → https://smee.io/<channel> → 本进程 → 127.0.0.1:3080/github
+  # harness 只绑回环（DSH_BIND_HOST=loopback），所以这里共享 dsh-agent 的
+  # 网络命名空间：容器里 127.0.0.1 就是 harness 的 127.0.0.1。
+  # 不共享会连不上，也不要给它加 ports（netns 共用，端口属于 dsh-agent）。
+  smee:
+    image: ${SMEE_IMAGE:-node:22-alpine}
+    container_name: ${SMEE_CONTAINER_NAME:-dsh-smee}
+    restart: unless-stopped
+    network_mode: "service:dsh-agent"
+    depends_on:
+      dsh-agent:
+        condition: service_started
+    environment:
+      SMEE_URL: ${SMEE_URL:?请在 .env 中设置 SMEE_URL（https://smee.io/<channel>）}
+      SMEE_TARGET: ${SMEE_TARGET:-http://127.0.0.1:3080/github}
+    # 直接把值插进命令：compose 的 $$ 转义在 config 输出里仍是 $$，容易踩坑
+    command: >
+      npx --yes smee-client@5.0.0
+      --url ${SMEE_URL:?请在 .env 中设置 SMEE_URL}
+      --target ${SMEE_TARGET:-http://127.0.0.1:3080/github}
+    logging: *default-logging
 
 networks:
   sanding:
