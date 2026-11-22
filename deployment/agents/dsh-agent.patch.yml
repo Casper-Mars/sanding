@@ -22,7 +22,7 @@
     baseUrl: http://host.docker.internal:8721 # 平台地址，结尾斜杠会被去掉
     actor: agent_core:echuan # X-Actor 声明式身份，不是 worker_id
     requestTimeoutMs: 35000 # 单请求超时
-    exclude: [] # 不注册的工具名；默认 [] = 全量 23 个
+    exclude: [] # 兼容字段；host 不再注册工具，工具由 preset 子路径各自注册
     worker:
       poll:
         enable: true # 本机 worker 负责领卡（one 已从部署下线）
