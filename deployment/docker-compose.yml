@@ -216,6 +216,8 @@ services:
       - "${DOCKER_SOCKET:-/var/run/docker.sock}:/var/run/docker.sock"
       - "${HOST_PROJECT_PATH:?请在 .env 中设置项目绝对路径}:/workspace"
       - "${DSH_MERGED_HOME_DIR:-./data/dsh-home-agent}:/home/node/.dsh"
+      # 共享资产库（只读）：/opt/agent-assets/<version>，由项目 .agent/assets.yaml pin
+      - "${AGENT_ASSETS_SRC:-../../agent-assets}:/opt/agent-assets:ro"
       # 部署补丁层：registry.default=cto，并声明 worker 的 presetByKind
       - "./agents/dsh-agent.patch.yml:/home/node/.dsh/cordis.patch.yml:ro"
       # webhook 规则模块（home patch 里以 ./profiles/web/webhook/... 引用）
