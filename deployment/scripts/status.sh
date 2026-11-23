@@ -35,8 +35,19 @@ fi
 echo
 echo "== GitHub webhook 中继 =="
 SMEE_NAME="${SMEE_CONTAINER_NAME:-dsh-smee}"
+AGENT_NAME="${DSH_CONTAINER_NAME:-dsh-agent}"
 if docker ps --format '{{.Names}}' | grep -qx "$SMEE_NAME"; then
-  printf 'smee        %s  %s\n' "$SMEE_NAME" "$(docker logs --tail 1 "$SMEE_NAME" 2>&1 | tail -1)"
+  smee_started=$(docker inspect -f '{{.State.StartedAt}}' "$SMEE_NAME" 2>/dev/null)
+  agent_started=$(docker inspect -f '{{.State.StartedAt}}' "$AGENT_NAME" 2>/dev/null)
+  # smee 用 network_mode: service:dsh-agent 共享网络命名空间。
+  # dsh-agent 后启动 = smee 还挂在旧（已销毁）的 netns 上：DNS/路由全废，
+  # webhook 全部丢在 smee.io 云端，本地看不到任何请求。
+  if [ -n "$smee_started" ] && [ -n "$agent_started" ] && [[ "$agent_started" > "$smee_started" ]]; then
+    printf 'smee        %s  网络已失效（dsh-agent 比 smee 后启动）\n' "$SMEE_NAME"
+    printf '            修复：docker compose up -d --force-recreate --no-deps smee\n'
+  else
+    printf 'smee        %s  %s\n' "$SMEE_NAME" "$(docker logs --tail 1 "$SMEE_NAME" 2>&1 | tail -1)"
+  fi
 else
   printf 'smee        未运行 —— GitHub webhook 不会送达 dsh-agent:/github\n'
 fi

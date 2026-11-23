@@ -93,6 +93,9 @@
       config:
         source: primary-github
         workspacePath: /workspace/repo-ops
+        # 仓库级 checkout 映射；未命中的仓库落到 workspacePath（自动建目录）。
+        workspaceByRepo:
+          Casper-Mars/echuan: /workspace/repo
         agentPreset: cto
         permissionPreset: workspace-write
         # 只处理带指定标签的 issue / PR；空数组 = 不过滤。

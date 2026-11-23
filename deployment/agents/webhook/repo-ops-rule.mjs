@@ -58,6 +58,12 @@ export function apply(ctx, config) {
   const agentPreset = config?.agentPreset ?? 'pm'
   const permissionPreset = config?.permissionPreset ?? 'workspace-write'
   const repositories = Array.isArray(config?.repositories) ? config.repositories : []
+  // 仓库 → 本地 checkout。未命中时用 workspacePath（会按需建目录）。
+  // 单一固定目录无法服务多个仓库，所以映射优先。
+  const workspaceByRepo =
+    config?.workspaceByRepo && typeof config.workspaceByRepo === 'object'
+      ? config.workspaceByRepo
+      : {}
   // 空数组 = 不按标签过滤（保持原有行为）。
   // 语义：all-of —— 必须同时带齐这些标签；只关心一个标签时就是「必须带 bug」。
   const requiredLabels = Array.isArray(config?.requiredLabels)
@@ -70,6 +76,11 @@ export function apply(ctx, config) {
   }
   if (typeof workspacePath !== 'string' || !workspacePath.startsWith('/')) {
     throw new Error('repo-ops rule: workspacePath 必须是绝对路径')
+  }
+  for (const [name, path] of Object.entries(workspaceByRepo)) {
+    if (typeof path !== 'string' || !path.startsWith('/')) {
+      throw new Error(`repo-ops rule: workspaceByRepo.${name} 必须是绝对路径`)
+    }
   }
 
   const seenFile = join(process.env.DSH_HOME ?? '/home/node/.dsh', 'webhook-seen.json')
@@ -130,9 +141,12 @@ export function apply(ctx, config) {
           const number = issue.number ?? payload.number
           const url = issue.html_url ?? payload.pull_request?.html_url ?? ''
           const target = eventName === 'pull_request' ? 'PR' : 'issue'
+          const targetWorkspace = workspaceByRepo[repo] ?? workspacePath
+          // WorkspaceRegistry 要求目录存在（realpath）；首次投递按需创建。
+          mkdirSync(targetWorkspace, { recursive: true })
 
           return {
-            workspacePath,
+            workspacePath: targetWorkspace,
             agentPreset,
             permissionPreset,
             title: `[repo-ops] ${repo}#${number} ${eventName}.${payload.action}`,
