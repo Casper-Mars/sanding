@@ -93,8 +93,15 @@
       config:
         source: primary-github
         workspacePath: /workspace/repo-ops
-        agentPreset: pm
+        agentPreset: cto
         permissionPreset: workspace-write
+        # 只处理带指定标签的 issue / PR；空数组 = 不过滤。
+        # all-of 语义：['bug'] = 必须带 bug；非空时规则会额外订阅 issues.labeled，
+        # 覆盖「先建 issue 后打标签」这条最常见路径。
+        requiredLabels:
+          - bug
+        # 角色路由只看这一项：规则 prompt 不写任何角色专属 skill 名，
+        # 换 preset（pm / cto / dev-leader）不需要再改规则代码。
         # 空数组 = 不按仓库过滤（只有你配了 webhook 的仓库才会推事件）
         repositories: []
 
