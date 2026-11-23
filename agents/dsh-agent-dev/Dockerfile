@@ -5,7 +5,7 @@
 # 设计边界（重要）：
 #   1. 镜像【不包含】任何业务插件。插件在容器启动时由入口脚本按 PLUGIN_SPECS
 #      从 npm registry 安装进 profile（版本钉死，已装版本不符则升级）。
-#   2. 镜像只提供运行时：dsh + docker CLI + devcontainer CLI + git + pnpm。
+#   2. 镜像只提供运行时：dsh + docker CLI + devcontainer CLI + git + pnpm + make + jq。
 #   3. 插件不入镜像、不挂宿主目录，也不需要宿主编译；构建产物由发布流程保证。
 #
 # 构建：  docker compose build
@@ -44,7 +44,8 @@ ARG GH_VERSION=2.95.0
 # 构建期访问 github.com 的代理（留空 = 直连 / 沿用 Docker Desktop 注入的构建代理）
 ARG GH_PROXY=
 
-# 系统依赖：git（dsh 工作流 / 项目根探测）、ca-certificates、curl（下载 gh .deb）。
+# 系统依赖：git（dsh 工作流 / 项目根探测）、ca-certificates、curl（下载 gh .deb）、
+#   make（仓库构建入口）、jq（解析 gh / curl 的 JSON 输出）。
 # 容器以 root 运行 dsh（不降权）：挂载的宿主 docker.sock 为 root:root 660，
 #   非 root 用户无法访问，docker/devcontainer CLI 将不可用；root 同时解决数据卷写权限。
 RUN set -eux; \
@@ -54,7 +55,7 @@ RUN set -eux; \
       "$APT_MIRROR" "$APT_MIRROR" "$APT_SECURITY_MIRROR" > /etc/apt/sources.list; \
     apt-get update \
  && apt-get install -y --no-install-recommends \
-      git ca-certificates bubblewrap curl\
+      git ca-certificates bubblewrap curl make jq\
  && rm -rf /var/lib/apt/lists/*
 
 # docker CLI 客户端（agent 通过它指挥宿主 daemon）
