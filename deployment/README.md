@@ -53,15 +53,38 @@ cp .env.example .env
 ## 3. 日常命令
 
 ```bash
-./scripts/up.sh                # 启动并等到 healthy（加 --build 重建镜像）
+./scripts/up.sh                # 启动并等到 healthy（缺镜像时自动拉）
+./scripts/up.sh --pull         # 先拉 ACR 上的 echuan:latest 再启动（升级用）
+./scripts/up.sh --build        # 用本地源码重建 echuan 再启动（开发用）
 ./scripts/down.sh              # 停止并移除容器（数据保留）
 ./scripts/status.sh            # 容器状态 + 端口探活 + 已注册 worker
 ./scripts/smoke-test.sh        # 冒烟：readyz、relay health、browserless、worker 注册
 
 docker compose logs -f --tail=100 dsh-agent
-docker compose build echuan    # 只重建某个镜像
-docker compose up -d echuan    # 只更新某个服务
+docker compose up -d echuan    # 只更新某个服务（不重新拉镜像）
 ```
+
+### 3.1 echuan 镜像来源
+
+默认从 **阿里云 ACR** 拉取：`registry.cn-hangzhou.aliyuncs.com/sanding/echuan:latest`。
+镜像由 echuan 仓库的 GitHub Actions 在每次合并进 `main` 后自动构建推送（amd64 + arm64 双架构）。
+
+仓库是私有的，宿主机要先登录一次（凭证存进 Docker keychain，之后不用再输）：
+
+```bash
+docker login registry.cn-hangzhou.aliyuncs.com   # 用户名=阿里云账号，密码=Registry 固定密码
+```
+
+想在机器上直接跑本地改的代码，用本地构建覆盖层（不依赖 ACR）：
+
+```bash
+./scripts/up.sh --build
+# 等价于：
+docker compose -f docker-compose.yml -f docker-compose.build.yml build echuan
+docker compose -f docker-compose.yml -f docker-compose.build.yml up -d echuan
+```
+
+本地构建会占用同名 tag（`ECHUAN_IMAGE`），下次 `./scripts/up.sh --pull` 拉回仓库版本即还原。
 
 > 如果以前起过旧三台 / 控制面，第一次用新 compose 会报 orphan containers：
 > `docker compose up -d --remove-orphans` 清掉即可。它们都是 bind mount，删容器不丢数据。

@@ -57,29 +57,11 @@ x-agent-env: &agent-env
 services:
   # ── 驿传平台 ──────────────────────────────────────────────────────────────
   echuan:
-    image: ${ECHUAN_IMAGE:-echuan:local}
-    build:
-      context: ${ECHUAN_SRC:-../../echuan_v2}
-      dockerfile: Dockerfile
-      args:
-        VERSION: ${ECHUAN_VERSION:-dev}
-        COMMIT: ${ECHUAN_COMMIT:-none}
-        # 构建期依赖源（默认国内镜像；切回官方见 echuan 仓库 docs/deploy.md 第 3.5 节）
-        GOPROXY: ${DOCKER_BUILD_GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct}
-        NPM_REGISTRY: ${DOCKER_BUILD_NPM_REGISTRY:-https://registry.npmmirror.com}
-        APK_MIRROR: ${DOCKER_BUILD_APK_MIRROR:-mirrors.aliyun.com}
-        IMAGE_MIRROR: ${DOCKER_BUILD_IMAGE_MIRROR:-}
-        NODE_IMAGE: ${DOCKER_BUILD_NODE_IMAGE:-node:22-alpine}
-        GO_IMAGE: ${DOCKER_BUILD_GO_IMAGE:-golang:1.26-alpine}
-        RUNTIME_IMAGE: ${DOCKER_BUILD_RUNTIME_IMAGE:-alpine:3.20}
-        # Docker Desktop 会把全局代理注入构建容器。默认清空（直连），
-        # 需要代理的环境在 .env 里设置 DOCKER_BUILD_*_PROXY。
-        HTTP_PROXY: ${DOCKER_BUILD_HTTP_PROXY:-}
-        HTTPS_PROXY: ${DOCKER_BUILD_HTTPS_PROXY:-}
-        http_proxy: ${DOCKER_BUILD_HTTP_PROXY:-}
-        https_proxy: ${DOCKER_BUILD_HTTPS_PROXY:-}
-        ALL_PROXY: ${DOCKER_BUILD_ALL_PROXY:-}
-        all_proxy: ${DOCKER_BUILD_ALL_PROXY:-}
+    # 镜像来自阿里云 ACR（GitHub Actions 在 main 合并后构建并推送双架构 latest）。
+    # 私有仓库：宿主机需先 docker login 一次，见 README「镜像来源」。
+    # 需要改本地代码即部署时，用本地构建覆盖层：
+    #   docker compose -f docker-compose.yml -f docker-compose.build.yml build echuan
+    image: ${ECHUAN_IMAGE:-registry.cn-hangzhou.aliyuncs.com/sanding/echuan:latest}
     container_name: ${ECHUAN_CONTAINER_NAME:-echuan}
     restart: unless-stopped
 
