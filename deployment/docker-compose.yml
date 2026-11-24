@@ -175,7 +175,7 @@ services:
       dockerfile: Dockerfile
       args:
         NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmmirror.com}
-        DSH_VERSION: ${DSH_VERSION:-0.2.1-rc.2}
+        DSH_VERSION: ${DSH_VERSION:?set DSH_VERSION in deployment/.env}
         GH_VERSION: ${GH_VERSION:-2.95.0}
         GH_PROXY: ${DOCKER_PROXY:-}
     container_name: ${DSH_MERGED_CONTAINER_NAME:-dsh-agent}
@@ -209,7 +209,7 @@ services:
     cap_add: *agent-cap
     environment:
       <<: *agent-env
-      PLUGIN_SPECS: ${DSH_MERGED_PLUGIN_SPECS:-dsh-agent-cto@0.7.1 dsh-agent-pm@0.7.1 dsh-agent-dev@0.8.2 dsh-echuan@0.5.1 dsh-agent-base@0.2.0 dsh-browser-native@0.1.0 dsh-local-admission@0.1.1 dsh-relay@0.4.0 @deepseek-ai/dsh-webhook@0.2.1-rc.2 @deepseek-ai/dsh-webhook-github@0.2.1-rc.2}
+      PLUGIN_SPECS: ${DSH_MERGED_PLUGIN_SPECS:?set DSH_MERGED_PLUGIN_SPECS in deployment/.env}
       # harness 只监听回环，对外只暴露 dsh-relay（TLS + 密码 + 设备配对）
       DSH_BIND_HOST: loopback
       DSH_RELAY_PORT: "3443"

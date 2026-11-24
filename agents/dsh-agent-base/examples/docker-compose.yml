@@ -19,7 +19,7 @@ services:
       dockerfile: Dockerfile
       args:
         NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmmirror.com}
-        DSH_VERSION: ${DSH_VERSION:-0.2.1-rc.2}
+        DSH_VERSION: ${DSH_VERSION:-0.2.2-rc.5}
     container_name: dsh-agent-base
     restart: unless-stopped
     # 让容器用 host.docker.internal 访问宿主服务（驿传平台）。

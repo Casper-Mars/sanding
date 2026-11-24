@@ -41,7 +41,7 @@ docker build -t dsh-agent-base:local .
 
 | 参数 | 默认 | 说明 |
 |---|---|---|
-| `DSH_VERSION` | `0.2.1-rc.2` | 镜像内 `@deepseek-ai/dsh` 版本；插件 peer 钉在同一版本，改它需同步插件 |
+| `DSH_VERSION` | `0.2.2-rc.5` | 镜像内 `@deepseek-ai/dsh` 版本；插件 peer 钉在同一版本，改它需同步插件 |
 | `NPM_REGISTRY` | `https://registry.npmmirror.com` | 构建期 npm 源 |
 | `APT_MIRROR` / `APT_SECURITY_MIRROR` | 阿里云 | 构建期 apt 源 |
 | `PNPM_VERSION` | `11.7.0` | corepack 激活的 pnpm 版本（与插件 `packageManager` 一致） |

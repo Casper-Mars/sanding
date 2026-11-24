@@ -19,7 +19,7 @@ services:
       dockerfile: Dockerfile
       args:
         NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmmirror.com}
-        DSH_VERSION: ${DSH_VERSION:-0.2.1-rc.2}
+        DSH_VERSION: ${DSH_VERSION:-0.2.2-rc.5}
         GH_VERSION: ${GH_VERSION:-2.95.0}
         # 构建期下载 gh 需要出网；留空则沿用 Docker Desktop 注入的构建代理
         GH_PROXY: ${DOCKER_PROXY:-}

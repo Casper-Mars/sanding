@@ -15,18 +15,23 @@
 # ---------------------------------------------------------------------------
 # 运行时镜像
 # ---------------------------------------------------------------------------
-FROM node:22-bookworm-slim AS runtime
+FROM node:24-bookworm-slim AS runtime
 
 # 国内镜像源（构建加速）。默认阿里云 apt + npmmirror npm；
-# apt 用 http 协议：node:22-bookworm-slim 基础镜像不含 ca-certificates 包，
+# apt 用 http 协议：node:24-bookworm-slim 基础镜像不含 ca-certificates 包，
 #   apt 访问 https 源会报 "certificate issuer is unknown"（证书验证失败）。
 ARG APT_MIRROR=http://mirrors.aliyun.com/debian
 ARG APT_SECURITY_MIRROR=http://mirrors.aliyun.com/debian-security
 ARG NPM_REGISTRY=https://registry.npmmirror.com
 
-# dsh 版本钉死（不用 latest）：npm 上 @deepseek-ai/dsh-* 的 latest 是 0.0.1-rc.1，
-# 与插件 peer 要求不兼容，会被 dsh 兼容性守卫拒绝。
-ARG DSH_VERSION=0.2.1-rc.2
+# dsh 版本必须由 build-arg 提供（compose 从 .env 传入）；不给默认值，避免与部署配置漂移。
+ARG DSH_VERSION
+
+RUN set -eu; \
+    if [ -z "${DSH_VERSION:-}" ]; then \
+      echo "DSH_VERSION build-arg 未设置（compose 应从 .env 传入）" >&2; \
+      exit 1; \
+    fi
 
 # pnpm 版本：与插件仓库 packageManager 字段一致
 ARG PNPM_VERSION=11.7.0
