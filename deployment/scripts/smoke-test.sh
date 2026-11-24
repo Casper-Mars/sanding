@@ -32,6 +32,19 @@ else
   bad "GET https://127.0.0.1:${DSH_RELAY_PORT}/relay/health 未返回 dsh-relay 健康响应：${relay:0:120}"
 fi
 
+echo "== 2b. dsh-agent 插件启动错误 =="
+# dsh 对插件加载失败是「记录错误 + 继续启动」：只看容器 healthy 会漏掉
+# 某个 tool 的 never started / 子路径不再导出。这里扫当前运行期的启动错误。
+startup_errors=$(docker logs --since 10m dsh-agent 2>&1 \
+  | grep -E 'never started|ERR_PACKAGE_PATH_NOT_EXPORTED|Cannot find package|does not provide an export' \
+  || true)
+if [ -n "$startup_errors" ]; then
+  bad "dsh-agent 启动期存在插件加载错误"
+  printf '%s\n' "$startup_errors" | head -20 | sed 's/^/     /'
+else
+  ok "dsh-agent 启动期无插件加载错误"
+fi
+
 echo "== 3. browserless（无头 Chromium） =="
 # 所有端点都需要 token；/json/version 是只读的版本探针，能同时验证鉴权与 Chromium 可用。
 if [ -z "${BROWSERLESS_TOKEN:-}" ]; then
