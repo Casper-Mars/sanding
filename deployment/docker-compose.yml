@@ -52,7 +52,7 @@ x-agent-env: &agent-env
   # GitHub PAT（.env 里配置；留空 = 容器内 gh 未登录）
   GH_PAT_TOKEN: ${GH_TOKEN:-}
   # LLM 凭据：环境层优先级最高、只读，Web 设置页无法覆盖
-  DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+  DEEPSEEK_API_KEY: ${SANDING_DEEPSEEK_API_KEY:-}
 
 services:
   # ── 驿传平台 ──────────────────────────────────────────────────────────────
