@@ -56,6 +56,8 @@ cp .env.example .env
 ./scripts/up.sh                # 启动并等到 healthy（缺镜像时自动拉）
 ./scripts/up.sh --pull         # 先拉 ACR 上的 echuan:latest 再启动（升级用）
 ./scripts/up.sh --build        # 用本地源码重建 echuan 再启动（开发用）
+./scripts/restart.sh           # 强制重启 echuan：删本地镜像 → 重拉 → 重建
+./scripts/restart.sh --all     # 同上，echuan + browserless
 ./scripts/down.sh              # 停止并移除容器（数据保留）
 ./scripts/status.sh            # 容器状态 + 端口探活 + 已注册 worker
 ./scripts/smoke-test.sh        # 冒烟：readyz、relay health、browserless、worker 注册
@@ -63,6 +65,9 @@ cp .env.example .env
 docker compose logs -f --tail=100 dsh-agent
 docker compose up -d echuan    # 只更新某个服务（不重新拉镜像）
 ```
+
+`restart.sh` 只处理从 registry 拉取的服务（`echuan` / `browserless`），会先停容器、删本地镜像、
+再 pull 和重建；`dsh-agent` 是本地构建镜像，不走这个脚本，用 `./scripts/up.sh --build`。
 
 ### 3.1 echuan 镜像来源
 
