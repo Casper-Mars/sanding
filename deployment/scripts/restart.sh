@@ -103,7 +103,11 @@ for svc in "${TARGETS[@]}"; do
 
   docker compose rm -sf "$svc" >/dev/null 2>&1 || true
   if docker image inspect "$image" >/dev/null 2>&1; then
-    docker rmi "$image" >/dev/null
+    if ! docker rmi "$image" >/dev/null; then
+      echo "删除本地镜像失败（可能被其他容器占用）；恢复 $svc" >&2
+      docker compose up -d "$svc" >/dev/null 2>&1 || true
+      exit 1
+    fi
     echo "已删除本地镜像: $image"
   else
     echo "本地无该镜像，跳过删除"
