@@ -135,6 +135,21 @@ export function apply(ctx, config) {
           if (seen.has(delivery.deliveryId)) return null
           remember(delivery.deliveryId)
 
+          // 「创建 issue 时就带标签」会同时产生 issues.opened 与 issues.labeled 两个投递
+          // （X-GitHub-Delivery 不同，delivery 级去重挡不住）→ 同一 issue 起两个会话。
+          // 这两个事件描述的是同一份 issue 状态（同标签集合），所以按「issue + 标签集合」去重，
+          // 与投递顺序无关：先到的处理，后到的直接丢。
+          // 只对 issues 生效；pull_request 的 opened / ready_for_review 语义不同，不能合并；
+          // issue_comment 仍按 delivery id 去重（评论 id 天然唯一）。
+          if (eventName === 'issues') {
+            const subjectNumber = subject.number ?? payload.number
+            if (subjectNumber !== undefined) {
+              const stateKey = `issue:${repo}#${subjectNumber}[${[...labels].sort().join(',')}]`
+              if (seen.has(stateKey)) return null
+              remember(stateKey)
+            }
+          }
+
           signal.throwIfAborted()
 
           const issue = subject

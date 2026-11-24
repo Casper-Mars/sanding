@@ -254,6 +254,16 @@ services:
     environment:
       SMEE_URL: ${SMEE_URL:?请在 .env 中设置 SMEE_URL（https://smee.io/<channel>）}
       SMEE_TARGET: ${SMEE_TARGET:-http://127.0.0.1:3080/github}
+      # Docker Desktop 会把宿主代理注入容器（host.docker.internal:7890），
+      # 但该地址在本容器网络里 ENETUNREACH → smee-client 一直 fetch failed，webhook 全丢。
+      # smee 只需要访问 https://smee.io，容器内直连正常，这里显式清空代理。
+      HTTP_PROXY: ""
+      HTTPS_PROXY: ""
+      ALL_PROXY: ""
+      http_proxy: ""
+      https_proxy: ""
+      all_proxy: ""
+      NO_PROXY: "*"
     # 直接把值插进命令：compose 的 $$ 转义在 config 输出里仍是 $$，容易踩坑
     command: >
       npx --yes smee-client@5.0.0
