@@ -90,7 +90,7 @@ services:
       # 数据库 / objects / workspaces 全部落在宿主机目录，删容器不丢数据
       - "${ECHUAN_DATA_DIR:-./echuan/data}:/data"
       # 配置只读挂载；部署侧真相源在 deployment/echuan/
-      - "${ECHUAN_CONFIG_FILE:-./echuan/echuan.container.toml}:/etc/echuan/echuan.toml:ro"
+      - "${ECHUAN_CONFIG_FILE:-./echuan/echuan.yaml}:/etc/echuan/echuan.yaml:ro"
 
     networks:
       - sanding
