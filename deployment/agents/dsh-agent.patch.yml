@@ -17,6 +17,15 @@
   config:
     defaultPreset: workspace-write
 
+# 关掉官方第一方身份行（"You are an AI agent powered by DeepSeek Harness."）：
+# 各角色人设已经是中文声明，这行英文夹在前面只会让开场像翻译稿。
+# 注意 patch 的 config 是整体替换（applyPatches 直接赋值 target.config），
+# web-app 层设的 personaPrefix 必须在这里重述，否则会被清空。
+- id: system-prompt
+  config:
+    includeHarnessIdentity: false
+    personaPrefix: 'You are a coding agent powered by the {{model}} model.'
+
 - id: echuan
   config:
     baseUrl: http://host.docker.internal:8721 # 平台地址，结尾斜杠会被去掉
