@@ -146,7 +146,7 @@ echuan 的容器配置**归部署侧所有**：`deployment/echuan/echuan.contain
 - **必须**在 `agents/dsh-agent.patch.yml` 覆盖 `agent-preset-registry.default: cto`
   （三个包各带一份 insert，最后一个 bundle 的 default 胜出，实测是 pm）。
 - 派单只下发 `kind`；kit 按 `worker.presetByKind` 在本机解析 preset（默认
-  `requirement=pm, design=cto, breakdown=cto, dev=dev-leader`），再按 `项目号:preset` 建会话。
+  `requirement=pm, design=cto, uiux-design=uiux, breakdown=cto, dev=dev-leader`），再按 `项目号:preset` 建会话。
   新增角色只改这一处 + 装好 preset，平台零改动。
 
 验收（容器内跑）：

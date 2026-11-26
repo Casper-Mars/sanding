@@ -42,6 +42,7 @@
       presetByKind:
         requirement: pm
         design: cto
+        uiux-design: uiux
         breakdown: cto
         dev: dev-leader
       metadata:
